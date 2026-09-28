@@ -27,6 +27,14 @@
     // le prénom et le téléphone de la dernière fois
     const moi = CO.store.get('moi', null);
     if (moi && !d.client.prenom) d.client = Object.assign(d.client, moi);
+    preremplir();
+  }
+  /** la carte à clous a un nom et un téléphone (js/co-compte.js) : le ticket les reprend s'ils manquent */
+  function preremplir() {
+    const cpt = CO.Compte && CO.Compte.get();
+    if (!cpt) return;
+    if (!d.client.prenom) d.client.prenom = cpt.nom;
+    if (!d.client.tel) d.client.tel = cpt.tel;
   }
   const garder = () => { CO.store.set('brouillon', d); CO.store.set('brouillon-etape', etape); };
   const objetDef = () => CO.OBJETS.find((o) => o.id === d.objet) || null;
@@ -114,6 +122,7 @@
         ${nav('Continuer', { ok: d.depot.plusTard || !!d.depot.date })}`;
     },
     qui() {
+      preremplir();
       const c = d.client;
       return `<h3 class="etape-q">C’est au nom de qui ?</h3>
         <p class="etape-aide">Clément vous prévient quand c’est prêt.</p>

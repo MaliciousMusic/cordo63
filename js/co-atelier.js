@@ -129,7 +129,7 @@
       // la scène se prépare en douce une fois l'accueil installé (le premier passage est alors immédiat)
       const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
       if (CO.view === 'atelier') arriver();
-      else idle(() => preparer(), { timeout: 5000 });
+      else CO.on('ouverture', () => idle(() => preparer(), { timeout: 5000 })); // pas pendant l'ouverture aux lacets
     },
   };
 })();

@@ -53,22 +53,35 @@
         </div>`;
     },
 
-    /** la souche (dans Mes tickets) */
+    /**
+     * la souche : le bas du ticket jaune, déchiré le long des pointillés, avec son œillet (on la pend
+     * à un clou dans Mes tickets) ; l'avancement en trous d'emporte-pièce, l'étape du moment entourée
+     * au stylo rouge ; prête : le papier vert et le tampon « PRÊTE »
+     */
     souche(c) {
-      const st = CO.STATUTS[CO.Commandes.rang(c)];
-      const { quoi, travaux } = resume(c);
       const r = CO.Commandes.rang(c);
-      const barres = CO.STATUTS.map((s, i) => `<i class="${i < r ? 'fait' : i === r ? 'ici' : ''}"></i>`).join('');
+      const st = CO.STATUTS[r];
+      const { quoi, travaux } = resume(c);
+      const poincons = CO.STATUTS.map((s, i) => `<i class="${i < r ? 'fait' : i === r ? 'ici' : ''}"></i>`).join('');
       let pret = '';
-      if (c.statut === 'prete') pret = `Passez la chercher : ${CO.statut().ouvert ? 'c’est ouvert maintenant' : CO.statut().texte.toLowerCase()}.`;
+      if (c.statut === 'prete') pret = `Passez la chercher : ${CO.statut().ouvert ? 'c’est ouvert maintenant' : CO.statut().texte.toLowerCase()}.`;
       else if (c.pret && c.statut !== 'rendue') pret = `Prévue pour ${CO.fmtDate(new Date(c.pret))}.`;
       else if (c.statut === 'envoyee' && c.depot && c.depot.date) pret = `Vous passez ${CO.fmtDate(new Date(c.depot.date + 'T12:00:00'))}${c.depot.creneau ? ', ' + c.depot.creneau : ''}.`;
+      const tampon = c.statut === 'prete' ? '<span class="s-tampon" aria-hidden="true">Prête</span>'
+        : c.statut === 'rendue' ? '<span class="s-tampon s-tampon-rendue" aria-hidden="true">Rendue</span>' : '';
       return `<article class="souche ${esc(c.statut)}" data-num="${esc(c.num)}" role="button" tabindex="0" aria-label="Ticket numéro ${esc(c.num)} : ${esc(st.nom)}">
-        <div class="s-tete"><span class="s-num">N° ${esc(c.num)}</span><span class="s-date">${esc(dateCourte(c.cree))}</span></div>
-        <p class="s-quoi"><span class="ecrit">${esc(quoi)}</span>${travaux ? ' — ' + esc(travaux) : ''}</p>
-        <p class="s-etat" style="margin:0"><b>${esc(st.nom)}</b>${esc(st.texte)}</p>
-        <div class="avance" aria-hidden="true">${barres}</div>
-        ${pret ? `<p class="s-pret">${esc(pret)}</p>` : ''}
+        <div class="s-papier">
+          <span class="s-oeillet" aria-hidden="true"></span>
+          <div class="s-tete"><span class="s-marque">CORDO63</span><span class="s-date">${esc(dateCourte(c.cree))}</span></div>
+          <p class="s-num"><small>N°</small>${esc(c.num)}</p>
+          <p class="s-quoi"><span class="ecrit">${esc(quoi || '—')}</span></p>
+          ${travaux ? `<p class="s-travaux">${esc(travaux)}</p>` : ''}
+          <div class="s-poincons" aria-hidden="true">${poincons}</div>
+          ${tampon}
+          <p class="s-etat"><b>${esc(st.nom)}</b> ${esc(st.texte)}</p>
+          ${pret ? `<p class="s-pret">${esc(pret)}</p>` : ''}
+          <span class="s-pastille" aria-hidden="true"></span>
+        </div>
       </article>`;
     },
 

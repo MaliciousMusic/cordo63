@@ -1,0 +1,49 @@
+/* ==========================================================================
+   Cordo 63 — l'ouverture (js/co-splash.js) : l'écran lacé de lacets de couleur (un <canvas>), au milieu
+   deux lacets enfilés de cubes de bois lettrés (dessinés dans le même <canvas> : ce bloc leur garde la
+   place), puis « Entrer » (le ticket jaune) et « Entrer sans le son » (une étiquette de kraft).
+   On entre : les lacets filent un à un sur le beat, les lacets à perles sont arrachés les derniers.
+   Polices par jetons : --sans (l'étiquette).
+   ========================================================================== */
+.splash {
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px 16px; overflow: hidden;
+  background: transparent; transition: opacity .35s ease; -webkit-tap-highlight-color: transparent;
+}
+.splash[hidden] { display: none; }
+.splash.part { opacity: 0; pointer-events: none; }
+.no-js .splash { display: none; }
+.splash-lacis { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* le milieu : sans cadre, les perles (leur place), puis les boutons */
+.splash-badge {
+  position: relative; z-index: 2; width: min(100%, 560px);
+  display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+}
+.splash-perles { width: 100%; height: 150px; flex: none; }
+.splash-entrer, .splash-muet {
+  opacity: 0; transform: translateY(8px); pointer-events: none; /* (pas de toucher à l'aveugle avant qu'ils paraissent) */
+  transition: opacity .4s ease .45s, transform .5s cubic-bezier(.2, 1.3, .4, 1) .45s;
+}
+.splash-badge.on .splash-entrer, .splash-badge.on .splash-muet { opacity: 1; transform: none; pointer-events: auto; }
+/* le ticket, bien détaché de la toile */
+.splash-entrer {
+  min-width: 170px;
+  box-shadow: inset 0 -2px 0 rgba(160, 120, 10, .25), 0 1px 2px rgba(24, 14, 6, .45), 0 12px 24px -8px rgba(24, 14, 6, .8);
+}
+/* « Entrer sans le son » : une petite étiquette de kraft, pointe et œillet à gauche */
+.splash-muet {
+  position: relative; isolation: isolate; margin-top: -2px; border: 0; background: none; cursor: pointer;
+  padding: 7px 14px 7px 27px; font-family: var(--sans, sans-serif); font-weight: 600; font-size: 13px; line-height: 1.3; color: #2B2118;
+  filter: drop-shadow(0 1px 1px rgba(24, 14, 6, .4)) drop-shadow(0 6px 9px rgba(24, 14, 6, .45));
+}
+.splash-muet::before { /* le carton */
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background: var(--grain), linear-gradient(180deg, #DCC196, var(--kraft, #CDAE80) 55%, #C1A171);
+  clip-path: polygon(11px 0, 100% 0, 100% 100%, 11px 100%, 0 50%);
+}
+.splash-muet::after { /* l'œillet */
+  content: ''; position: absolute; left: 11px; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%;
+  background: radial-gradient(circle, #3A2A1C 0 38%, #F1E6D0 44% 66%, #A88A5C 72%);
+}
+.splash-muet[hidden] { display: none; }
+.splash.lance .splash-entrer, .splash.lance .splash-muet { opacity: 0; transform: none; transition: opacity .2s ease; pointer-events: none; }

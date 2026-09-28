@@ -217,12 +217,12 @@
       CO.on('view', (v) => { if (v === 'services') preparerEtabli(); });
       // le décor de l'établi se calcule aux temps morts, à la taille qu'il aura (gardé en mémoire et dans
       // IndexedDB) : le premier passage sur l'onglet est immédiat ; la scène elle-même attend d'être visible
-      setTimeout(() => {
+      CO.on('ouverture', () => setTimeout(() => { // une fois l'ouverture finie (pas pendant les lacets)
         if (!CO.Etabli || !CO.Etabli.prechauffer) return;
         const main = document.getElementById('main');
         const w = main ? main.clientWidth : innerWidth, h = main ? main.clientHeight : innerHeight;
         try { CO.Etabli.prechauffer({ largeur: w, hauteur: Math.round(CO.clamp(h * 0.46, 250, 520)), disposition: 'services', graine: 63 }); } catch (e) { /* rien */ }
-      }, 2500);
+      }, 1200));
       // le ticket en cours de remplissage coche/décoche aussi ici
       CO.on('devis', (ids) => {
         choisis = new Set(ids);

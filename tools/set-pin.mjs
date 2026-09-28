@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Change le code de l'atelier (4 chiffres) : il plante les clous de la carte fidélité et ouvre l'espace atelier.
-// Usage : node tools/set-pin.mjs 4821
+// Change le code de l'atelier (6 chiffres) : il plante les clous de la carte fidélité et ouvre l'espace atelier.
+// Usage : node tools/set-pin.mjs 482193
 // Le code n'est jamais stocké en clair : seule son empreinte SHA-256 est écrite dans js/co-clous.js.
 
 import { createHash } from 'node:crypto';
@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const pin = process.argv[2];
-if (!/^\d{4}$/.test(pin || '')) {
-  console.error('Usage : node tools/set-pin.mjs <code à 4 chiffres>');
+if (!/^\d{6}$/.test(pin || '')) {
+  console.error('Usage : node tools/set-pin.mjs <code à 6 chiffres>');
   process.exit(1);
 }
 

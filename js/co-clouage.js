@@ -117,13 +117,12 @@
     const coulPatine = m.fin === 'cuivre' || m.fin === 'bronze' || m.fin === 'laiton' ? '#3d4a2c' : '#1a1a1a';
     defs.push(`<radialGradient id="${u}p" gradientUnits="userSpaceOnUse" cx="${f2(m.patine.x)}" cy="${f2(m.patine.y)}" r="${f2(m.patine.r)}"><stop offset="0" stop-color="${coulPatine}" stop-opacity="${f2(m.patine.a)}"/><stop offset="1" stop-color="${coulPatine}" stop-opacity="0"/></radialGradient>`);
     if (ombre) {
-      // le creux : le cuir tassé autour de la tête (plus sombre), un bourrelet qui prend la lumière plus loin
-      defs.push(`<radialGradient id="${u}f" gradientUnits="userSpaceOnUse" r="${f2(R + 7.5)}"><stop offset="0" stop-color="#1c0f06" stop-opacity=".6"/><stop offset="${f2(R / (R + 7.5))}" stop-color="#1c0f06" stop-opacity=".55"/><stop offset="${f2((R + 3) / (R + 7.5))}" stop-color="#1c0f06" stop-opacity=".18"/><stop offset="1" stop-color="#1c0f06" stop-opacity="0"/></radialGradient>`);
-      defs.push(`<radialGradient id="${u}s" gradientUnits="userSpaceOnUse" cx="1.6" cy="2.2" r="${f2(R + 3)}"><stop offset="0" stop-color="#0d0703" stop-opacity=".62"/><stop offset=".7" stop-color="#0d0703" stop-opacity=".35"/><stop offset="1" stop-color="#0d0703" stop-opacity="0"/></radialGradient>`);
-      corps.push(`<circle r="${f2(R + 7.5)}" fill="url(#${u}f)"/>`);
-      // le bourrelet du cuir, éclairé du côté de la lumière
-      corps.push(`<path d="M${f2(-(R + 3.8) * 0.9)} ${f2((R + 3.8) * 0.42)}A${f2(R + 3.8)} ${f2(R + 3.8)} 0 0 1 ${f2((R + 3.8) * 0.42)} ${f2(-(R + 3.8) * 0.9)}" fill="none" stroke="#ffdcb4" stroke-opacity=".08" stroke-width="2.2" stroke-linecap="round"/>`);
-      corps.push(`<ellipse cx="1.6" cy="2.2" rx="${f2(R + 2.4)}" ry="${f2(R + 2)}" fill="url(#${u}s)"/>`);
+      // le cuir tassé tout contre la tête (un liseré sombre, étroit), et l'ombre de contact, douce, vers le bas à
+      // droite (la lumière vient d'en haut à gauche) : pas de grand disque ni d'arc clair autour
+      defs.push(`<radialGradient id="${u}f" gradientUnits="userSpaceOnUse" r="${f2(R + 2.6)}"><stop offset="${f2((R - 0.6) / (R + 2.6))}" stop-color="#1c0f06" stop-opacity=".42"/><stop offset="${f2((R + 0.8) / (R + 2.6))}" stop-color="#1c0f06" stop-opacity=".16"/><stop offset="1" stop-color="#1c0f06" stop-opacity="0"/></radialGradient>`);
+      defs.push(`<radialGradient id="${u}s" gradientUnits="userSpaceOnUse" cx="1.1" cy="1.5" r="${f2(R + 1.8)}"><stop offset="${f2((R - 1) / (R + 1.8))}" stop-color="#0d0703" stop-opacity=".55"/><stop offset="1" stop-color="#0d0703" stop-opacity="0"/></radialGradient>`);
+      corps.push(`<circle r="${f2(R + 2.6)}" fill="url(#${u}f)"/>`);
+      corps.push(`<circle cx="1.1" cy="1.5" r="${f2(R + 1.8)}" fill="url(#${u}s)"/>`);
     }
     // la tête
     const g = [];

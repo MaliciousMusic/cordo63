@@ -389,9 +389,12 @@
     const fac = initFacade();
     const splash = CO.splash ? CO.splash() : Promise.resolve({ skipped: true });
     const [f, sp] = await Promise.all([fac, splash]);
+    // « l'appli est dévoilée » : les calculs lourds des autres onglets attendent ce signal (l'ouverture l'émet elle-même)
+    if (!sp || !sp.revele) CO.emit('ouverture', sp || { skipped: true });
     const ens = f ? initEnseigne() : Promise.resolve(null);
     if (f) {
-      if (f.play && !(sp && sp.skipped && new URLSearchParams(location.search).has('fige'))) await f.play();
+      // après l'ouverture aux lacets, la devanture est déjà là, allumée : on ne rejoue pas sa construction
+      if (f.play && !(sp && (sp.revele || (sp.skipped && new URLSearchParams(location.search).has('fige'))))) await f.play();
       if (f.idle) f.idle();
     }
     const j = await ens;

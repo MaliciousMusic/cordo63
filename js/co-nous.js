@@ -25,7 +25,7 @@
   function pile() {
     const box = $('#pile-photos');
     if (!box) return;
-    box.innerHTML = CO.INSTA.map((p, i) => `<figure class="pile-photo" data-i="${i}" style="margin:0"><img src="assets/img/insta/${p.img}.webp" alt="${esc(p.legende)}" loading="lazy" decoding="async" draggable="false"><span>${esc(p.legende)}</span></figure>`).join('');
+    box.innerHTML = CO.INSTA.map((p, i) => `<figure class="pile-photo" data-i="${i}"><img src="assets/img/insta/${p.img}.webp" alt="${esc(p.legende)}" loading="lazy" decoding="async" draggable="false"><span>${esc(p.legende)}</span></figure>`).join('');
     const cards = $$('.pile-photo', box);
     const N = cards.length;
     let order = cards.map((_, i) => i), busy = false, drag = null;

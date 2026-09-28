@@ -1,0 +1,390 @@
+/* ==========================================================================
+   Cordo 63 — Mes tickets : au comptoir de Clément
+   En haut, le mur de pierre de l'atelier (peint une fois par js/co-suivi.js) sous sa lampe
+   émaillée ; une planche de chêne où une étiquette Dymo dit MES TICKETS ; les souches
+   jaunes pendent à des crochets et à des clous, au bout d'une ficelle, un peu de travers
+   (elles se balancent quand on défile ou qu'on les touche). En bas, l'établi : l'aggloméré,
+   le tapis de découpe vert quadrillé, la carte de cuir posée dessus (vue de dessus, comme
+   les mains de Clément qui viennent y planter les clous), le maillet et la coupelle de clous.
+   La fiche du compte (feuille #feuille-compte) : une étiquette kraft remplie au stylo.
+   Remplace les règles « Mes tickets » de cordo.css (souche, vide-tickets, suivre-num, carte).
+   ========================================================================== */
+
+:root {
+  --encre-bleue: #1D2C5E;      /* le stylo de Clément sur les tickets (comme .ecrit de cordo.css) */
+  --ficelle: #9A7A55;
+  --ficelle-ombre: #5E4630;
+}
+#tickets {
+  --trou: #231A14;             /* ce qu'on voit par un trou de la souche : le mur, dans l'ombre */
+  --plateau:
+    radial-gradient(90% 60% at 30% 20%, rgba(150, 110, 76, .22), transparent 70%),
+    radial-gradient(60% 50% at 85% 75%, rgba(20, 12, 6, .35), transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .78 0 0 0 0 .6 0 0 0 0 .42 0 0 0 2.4 -1.45'/%3E%3C/filter%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .08 0 0 0 0 .05 0 0 0 0 .03 0 0 0 2.6 -1.5'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23b)'/%3E%3Crect width='220' height='220' filter='url(%23a)'/%3E%3C/svg%3E"),
+    #54402F;
+}
+#tickets .view-scroll { background: #221912; }
+#tickets .view-scroll::after { background: var(--plateau); } /* (sous l'arrondi de la barre : l'établi continue) */
+
+/* ======================================================================
+   Le mur de pierre, la lampe, la planche
+   ====================================================================== */
+.mur { position: relative; overflow: hidden; padding: 0 0 34px; background: #3A2D23; isolation: isolate; }
+.mur-pierre { position: absolute; left: 0; top: 0; z-index: -1; width: 100%; height: 100%; max-width: none; pointer-events: none; } /* (plus haut que le mur : js/co-suivi.js) */
+.mur::after { /* au pied du mur, l'ombre de l'établi */
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 60px; z-index: -1; pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(12, 7, 3, .6));
+}
+.mur-lampe { position: absolute; left: max(4px, calc(26% - 52px)); top: 0; width: 104px; height: 74px; pointer-events: none; z-index: 3; }
+.mur-lampe svg { width: 100%; height: 100%; overflow: visible; }
+
+/* la planche de chêne vissée au mur : l'étiquette Dymo, les crochets de la première rangée */
+.planche {
+  position: relative; z-index: 2; height: 38px; margin: 64px -4px 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 30px 0 32px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='38'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.006 .42' numOctaves='3' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .2 0 0 0 0 .11 0 0 0 0 .04 0 0 0 1.9 -.78'/%3E%3C/filter%3E%3Crect width='420' height='38' filter='url(%23f)'/%3E%3C/svg%3E") 0 0 / 420px 38px,
+    linear-gradient(180deg, rgba(255, 228, 184, .34) 0, rgba(255, 228, 184, .06) 22%, transparent 55%, rgba(0, 0, 0, .28) 100%),
+    linear-gradient(90deg, #7C5533, #9C6D43 22%, #A3744A 48%, #8F633C 74%, #74502F);
+  box-shadow: inset 0 1px 0 rgba(255, 232, 196, .4), inset 0 -2px 0 rgba(40, 22, 10, .45), 0 9px 12px -5px rgba(8, 4, 2, .7);
+  border-radius: 2px;
+}
+.planche::before, .planche::after { /* deux vis à tête fendue */
+  content: ''; position: absolute; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%;
+  background:
+    linear-gradient(35deg, transparent 44%, rgba(40, 30, 20, .75) 44% 56%, transparent 56%),
+    radial-gradient(circle at 35% 30%, #F2E6C8, #B9A580 45%, #6E5E43 85%);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .5);
+}
+.planche::before { left: 12px; }
+.planche::after { right: 12px; }
+
+.planche-mot { /* au crayon, sur le bois */
+  margin: 0 0 -3px; font-family: var(--main); font-weight: 400; font-size: 12.5px; line-height: 1; white-space: nowrap; color: rgba(52, 44, 38, .66);
+  transform: rotate(-2.5deg); text-shadow: 0 .5px 0 rgba(255, 236, 200, .25);
+}
+
+/* ---------- l'étiquette Dymo : un ruban plastique, les lettres embouties en blanc ---------- */
+.dymo {
+  position: relative; display: inline-flex; align-items: center; height: 25px; margin: 0; padding: 0 11px 0 12px;
+  font-family: var(--chiffres); font-weight: 800; font-size: 16px; line-height: 1; letter-spacing: .15em; text-transform: uppercase; white-space: nowrap;
+  color: #EFEDE6;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .16) 0, rgba(255, 255, 255, .05) 30%, transparent 46%, rgba(0, 0, 0, .25) 100%),
+    var(--dymo-ruban, #17181A);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .55), 1px 2px 0 rgba(0, 0, 0, .35), 2px 4px 6px -1px rgba(0, 0, 0, .5);
+  transform: rotate(-1.4deg);
+}
+.dymo-bande { display: inline-flex; }
+.dymo-bande i { font-style: normal; display: inline-block; text-shadow: 0 -.5px 0 rgba(255, 255, 255, .5), 0 1px 0 rgba(0, 0, 0, .95), 0 1.6px 1px rgba(0, 0, 0, .5); }
+.dymo-bande i:nth-child(3n + 1) { transform: translateY(.6px); }
+.dymo-bande i:nth-child(4n + 2) { transform: translateY(-.5px) rotate(-1.5deg); }
+.dymo-bande i:nth-child(5n) { opacity: .92; }
+.dymo-bande i.espace { width: .4em; }
+.dymo-rouge { --dymo-ruban: #B8262A; color: #FBF1EA; }
+
+/* ======================================================================
+   Le tableau : les souches pendues
+   ====================================================================== */
+.mes-tickets { position: relative; z-index: 1; }
+.tableau { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 14px; padding: 0 12px; align-items: start; }
+.accroche { position: relative; min-width: 0; padding-top: var(--fil, 24px); filter: drop-shadow(5px 9px 5px rgba(10, 5, 2, .55)); }
+.accroche-point { position: absolute; left: 50%; top: 0; z-index: 3; pointer-events: none; }
+/* un crochet de laiton vissé sous la planche (première rangée) */
+.accroche-point.crochet { width: 11px; height: 13px; margin: -1px 0 0 -5.5px; }
+.accroche-point.crochet::before { content: ''; position: absolute; left: 4px; top: 0; width: 3px; height: 5px; background: linear-gradient(90deg, #7A6130, #E8CF8E, #8C6E34); }
+.accroche-point.crochet::after {
+  content: ''; position: absolute; left: 0; top: 4px; width: 11px; height: 9px; box-sizing: border-box;
+  border: 2.2px solid #C9A456; border-top: 0; border-radius: 0 0 7px 7px; border-left-color: #E6CB86; border-right-color: #8E6E32;
+}
+/* un clou planté dans un joint du mur */
+.accroche-point.clou { width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #C9C4BA, #6D6860 45%, #2B2825 85%); box-shadow: 1.5px 2.5px 2px rgba(0, 0, 0, .55); }
+.pendule { position: relative; transform-origin: 50% calc(-1 * var(--fil, 24px)); transform: rotate(var(--incl, 0deg)); }
+.ficelle {
+  position: absolute; left: 50%; bottom: 100%; z-index: 3; width: 1.5px; height: calc(var(--fil, 24px) + 17px); margin: 0 0 -17px -.75px; pointer-events: none;
+  background: linear-gradient(90deg, var(--ficelle-ombre), var(--ficelle) 45%, #C8A77E 60%, var(--ficelle-ombre));
+  border-radius: 1px;
+}
+
+/* ---------- la souche : le bas du ticket jaune, déchiré le long des pointillés, son œillet ---------- */
+.souche {
+  position: relative; display: block; width: 100%; max-width: 250px; margin: 0 auto; padding: 0; border-radius: 0; color: #2A2310; cursor: pointer; text-align: left; text-decoration: none;
+  background: none; box-shadow: none; -webkit-mask: none; mask: none;
+  filter: drop-shadow(2px 7px 5px rgba(80, 60, 0, .32)) drop-shadow(0 1px 1px rgba(0, 0, 0, .12));
+  -webkit-tap-highlight-color: transparent;
+}
+.souche::before, .souche::after { content: none; }
+.souche.prete, .souche.rendue { background: none; } /* (cordo.css peignait la souche entière : le papier est .s-papier, déchiré en haut) */
+.accroche .souche { filter: none; max-width: none; }
+.souche:focus-visible { outline: 2px solid var(--pastille); outline-offset: 3px; border-radius: 4px; } /* (sur la souche : le papier, découpé, rognerait le contour) */
+.s-papier {
+  position: relative; padding: 25px 11px 13px;
+  background: var(--grain), linear-gradient(180deg, #F9E068, var(--ticket) 34%, #EFCB3E);
+  border-radius: 0 0 7px 7px;
+  box-shadow: inset 0 -2px 0 rgba(160, 120, 10, .22);
+  /* le haut déchiré le long des pointillés */
+  clip-path: polygon(0 3px, 3% 1px, 6% 3.5px, 9% 1px, 12% 3px, 15% .5px, 18% 3px, 21% 1.5px, 24% 3.5px, 27% 1px, 30% 3px, 33% .5px, 36% 3px, 39% 1.5px, 42% 3.5px, 45% 1px, 48% 3px, 51% .5px, 54% 3px, 57% 1px, 60% 3.5px, 63% 1px, 66% 3px, 69% .5px, 72% 3px, 75% 1.5px, 78% 3.5px, 81% 1px, 84% 3px, 87% .5px, 90% 3px, 93% 1px, 96% 3.5px, 100% 1px, 100% 100%, 0 100%);
+}
+.s-papier::before { /* la ligne de pointillés, juste sous la déchirure */
+  content: ''; position: absolute; left: 6px; right: 6px; top: 6px; border-top: 1.5px dotted rgba(90, 70, 10, .38);
+}
+.s-oeillet {
+  position: absolute; left: 50%; top: 11px; width: 13px; height: 13px; margin-left: -6.5px; border-radius: 50%; z-index: 2;
+  background: radial-gradient(circle, var(--trou, var(--papier)) 0 32%, #CFC8B8 40%, #8E887C 58%, #EAE4D6 73%, #A49D8F 88%);
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, .35);
+}
+.souche .s-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.souche .s-marque { font-family: var(--chiffres); font-weight: 800; font-size: 10px; letter-spacing: .16em; color: #3A3012; }
+.souche .s-date { font-size: 10.5px; color: #5A4A1A; white-space: nowrap; }
+.souche .s-num { margin: 0; font-family: var(--chiffres); font-weight: 800; font-size: 28px; line-height: 1.02; letter-spacing: .02em; color: var(--pastille); }
+.souche .s-num small { font-size: 13px; letter-spacing: .06em; margin-right: 3px; color: #B8352A; }
+.souche .s-quoi { margin: 3px 0 2px; font-weight: 600; font-size: 13px; line-height: 1.2; }
+.souche .s-quoi .ecrit { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 20px; line-height: 1.02; color: var(--encre-bleue); }
+.souche .s-travaux { margin: 0; font-size: 11px; line-height: 1.3; color: #5A4A1A; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+/* l'avancement : un trou d'emporte-pièce par étape franchie, l'étape du moment entourée au stylo rouge */
+.souche .s-poincons { display: flex; justify-content: space-between; margin: 10px 3px 8px; }
+.s-poincons i { position: relative; width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1.2px rgba(90, 70, 10, .32); }
+.s-poincons i.fait, .s-poincons i.ici { background: radial-gradient(circle at 62% 66%, #5A4636, var(--trou, var(--papier)) 72%); box-shadow: inset 1px 1.3px 0 rgba(0, 0, 0, .45), 0 .6px 0 rgba(255, 250, 220, .6); }
+.s-poincons i.ici::after {
+  content: ''; position: absolute; left: -5px; top: -4.5px; width: 19px; height: 17px; border: 1.6px solid rgba(214, 40, 32, .9);
+  border-radius: 52% 46% 50% 44%; transform: rotate(-14deg); border-top-color: rgba(214, 40, 32, .55);
+}
+.souche .s-etat { margin: 0; font-size: 11.5px; line-height: 1.32; color: #3F3514; }
+.souche .s-etat b { display: block; font-family: var(--large); font-stretch: 75%; font-weight: 800; font-size: 15px; line-height: 1.1; text-transform: uppercase; letter-spacing: .02em; color: #2A2310; margin: 0 0 1px; }
+.souche .s-etat b::after { content: none; }
+.souche .s-pret { margin: 6px 0 0; padding-top: 5px; border-top: 1px dashed rgba(90, 70, 10, .32); font-size: 10.5px; line-height: 1.3; color: #4A3E14; padding-right: 14px; }
+.s-pastille { position: absolute; right: 9px; bottom: 9px; width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #F26A5E, var(--pastille) 55%, #B52A20); box-shadow: 0 1px 1px rgba(0, 0, 0, .25); }
+/* prête : le papier vert, le tampon « PRÊTE » à l'encre verte */
+.souche.prete .s-papier { background: var(--grain), linear-gradient(180deg, #D4EDB6, #BFE09C 38%, #AED48A); box-shadow: inset 0 -2px 0 rgba(60, 110, 30, .22); }
+.souche.prete .s-papier::before { border-top-color: rgba(40, 80, 20, .35); }
+.souche.prete .s-date, .souche.prete .s-travaux, .souche.prete .s-pret, .souche.prete .s-etat { color: #2F4A1C; }
+.souche.prete .s-poincons i { box-shadow: inset 0 0 0 1.2px rgba(40, 80, 20, .35); }
+.s-tampon { /* dans le flux, à la place du titre de l'état (il le dit mieux) */
+  position: relative; z-index: 2; display: table; margin: 1px 0 7px -1px; padding: 3px 7px 2px; pointer-events: none;
+  font-family: var(--chiffres); font-weight: 900; font-size: 22px; line-height: 1; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(28, 110, 48, .88); border: 2.4px solid rgba(28, 110, 48, .82); border-radius: 5px;
+  box-shadow: inset 0 0 0 1.6px rgba(212, 237, 182, .9), inset 0 0 0 3px rgba(28, 110, 48, .6);
+  transform: rotate(-7deg); transform-origin: 30% 60%; mix-blend-mode: multiply;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='40'%3E%3Cfilter id='t'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2' seed='9'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 2.1'/%3E%3C/filter%3E%3Crect width='90' height='40' filter='url(%23t)'/%3E%3C/svg%3E") 0 0 / 90px 40px;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='40'%3E%3Cfilter id='t'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2' seed='9'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.2 2.1'/%3E%3C/filter%3E%3Crect width='90' height='40' filter='url(%23t)'/%3E%3C/svg%3E") 0 0 / 90px 40px;
+}
+.s-tampon-rendue { color: rgba(60, 70, 110, .75); border-color: rgba(60, 70, 110, .7); box-shadow: inset 0 0 0 1.6px rgba(240, 225, 170, .8), inset 0 0 0 3px rgba(60, 70, 110, .5); font-size: 19px; }
+.s-tampon.frappe { animation: tampon-pret .46s cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes tampon-pret { 0% { transform: rotate(-13deg) scale(2.3); opacity: 0; } 55% { transform: rotate(-6deg) scale(.93); opacity: 1; } 100% { transform: rotate(-7deg) scale(1); } }
+.souche.prete .s-etat b, .souche.rendue .s-etat b { display: none; }
+.souche.rendue { opacity: .7; }
+.souche.rendue .s-papier { filter: saturate(.45) brightness(.97); }
+
+/* ---------- le ticket vierge : l'appel à déposer ---------- */
+.souche.vierge .s-num { color: rgba(224, 58, 46, .38); }
+.souche .vierge-t { /* écrit au stylo sur les lignes du ticket */
+  margin: 6px 0 0; padding: 0 2px 3px; font-family: var(--stylo); font-size: 22px; line-height: 25px; color: var(--encre-bleue);
+  background: repeating-linear-gradient(180deg, transparent 0 23px, rgba(90, 70, 10, .42) 23px 24.3px, transparent 24.3px 25px);
+}
+.souche .vierge-t svg { display: inline-block; width: 22px; height: 22px; vertical-align: -4px; margin-left: 2px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.souche .vierge-s { margin: 12px 0 0; font-size: 11px; line-height: 1.3; color: #5A4A1A; padding-right: 14px; }
+
+/* ---------- le crochet vide, et le mot de Clément scotché au mur ---------- */
+.accroche.vide { filter: drop-shadow(4px 8px 5px rgba(10, 5, 2, .5)); }
+.mot {
+  position: relative; margin: 30px 2px 0 6px; padding: 14px 11px 12px; transform: rotate(-3deg);
+  font-family: var(--main); font-variation-settings: 'INFM' 60, 'BNCE' 20; font-size: 13.5px; line-height: 1.32; color: #2E2A33;
+  background:
+    linear-gradient(rgba(64, 104, 170, .14) 1px, transparent 1px) 0 6px / 100% 9px,
+    linear-gradient(90deg, rgba(64, 104, 170, .14) 1px, transparent 1px) 5px 0 / 9px 100%,
+    #F8F4EA;
+  clip-path: polygon(0 0, 100% 1%, 99% 100%, 96% 98%, 92% 100%, 88% 97.5%, 84% 100%, 80% 98%, 76% 100%, 72% 97.5%, 68% 100%, 64% 98%, 60% 100%, 56% 97.5%, 52% 100%, 48% 98%, 44% 100%, 40% 97.5%, 36% 100%, 32% 98%, 28% 100%, 24% 97.5%, 20% 100%, 16% 98%, 12% 100%, 8% 97.5%, 4% 100%, 1% 98%);
+}
+.mot p { margin: 0 0 4px; }
+.mot-signe { display: block; text-align: right; font-size: 12.5px; color: #5E5462; }
+.scotch { /* un bout de ruban de masquage */
+  position: absolute; z-index: 2; width: 46px; height: 15px; pointer-events: none;
+  background: linear-gradient(180deg, rgba(238, 226, 196, .9), rgba(222, 206, 170, .88));
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, .25);
+  clip-path: polygon(2% 8%, 10% 0, 22% 10%, 36% 2%, 50% 9%, 64% 0, 78% 8%, 90% 1%, 100% 10%, 97% 92%, 88% 100%, 74% 91%, 60% 99%, 46% 90%, 32% 100%, 18% 92%, 6% 100%, 0 90%);
+}
+.mot .scotch { left: 50%; top: -7px; margin-left: -23px; transform: rotate(4deg); }
+
+/* ---------- suivre un ticket papier : on écrit le numéro sur une souche ---------- */
+.suivre-num { position: relative; z-index: 1; display: block; margin: 30px 16px 0; filter: drop-shadow(4px 8px 5px rgba(10, 5, 2, .5)); }
+.suivre-num .scotch { left: 50%; top: -8px; margin-left: -26px; width: 52px; transform: rotate(-3deg); }
+.sn-papier {
+  position: relative; max-width: 360px; margin: 0 auto; padding: 14px 16px 14px 26px; transform: rotate(.8deg);
+  background: var(--grain), linear-gradient(180deg, #F9E068, var(--ticket) 34%, #EFCB3E);
+  border-radius: 7px 7px 7px 7px;
+  box-shadow: inset 0 -2px 0 rgba(160, 120, 10, .22);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 3px 96%, 0 92%, 3px 88%, 0 84%, 3px 80%, 0 76%, 3px 72%, 0 68%, 3px 64%, 0 60%, 3px 56%, 0 52%, 3px 48%, 0 44%, 3px 40%, 0 36%, 3px 32%, 0 28%, 3px 24%, 0 20%, 3px 16%, 0 12%, 3px 8%, 0 4%);
+}
+.sn-papier::before { content: ''; position: absolute; left: 10px; top: 8px; bottom: 8px; border-left: 1.5px dotted rgba(90, 70, 10, .4); }
+.sn-t { margin: 0 0 2px; font-family: var(--chiffres); font-weight: 800; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #3A3012; }
+.sn-t small { font-family: var(--sans); font-weight: 500; font-size: 11.5px; letter-spacing: 0; text-transform: none; color: #5A4A1A; margin-left: 4px; }
+.sn-ligne { display: flex; align-items: center; gap: 8px; }
+.sn-no { font-family: var(--chiffres); font-weight: 800; font-size: 26px; line-height: 1; color: var(--pastille); flex: none; }
+.suivre-num input {
+  flex: 1; min-width: 0; width: 100%; min-height: 44px; margin: 0; padding: 6px 2px 0; border: 0; border-radius: 0; outline: none;
+  border-bottom: 1.6px dotted rgba(90, 70, 10, .55); background: transparent;
+  font-family: var(--stylo); font-weight: 400; font-size: 30px; line-height: 1; letter-spacing: .06em; color: var(--encre-bleue);
+}
+.suivre-num input::placeholder { color: rgba(29, 44, 94, .28); }
+.suivre-num input:focus { border-bottom-color: var(--encre-bleue); }
+.sn-btn { flex: none; min-height: 42px; padding: 8px 16px; font-size: 14px; }
+
+/* ======================================================================
+   L'établi : l'aggloméré, le tapis de découpe, la carte de cuir
+   ====================================================================== */
+.clous { position: relative; margin: 0; }
+.etabli-bord { /* le chant de l'établi, contre le mur */
+  position: relative; z-index: 1; height: 14px;
+  background: linear-gradient(180deg, #6A4E38, #4A3526 40%, #2E2017);
+  box-shadow: 0 -1px 0 rgba(255, 220, 180, .18), 0 4px 6px rgba(0, 0, 0, .45);
+}
+.etabli-plateau { position: relative; overflow: hidden; padding: 20px 0 30px; background: var(--plateau); }
+.etabli-plateau::before { /* la lumière chaude de la lampe, sur l'établi */
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(75% 45% at 42% 38%, rgba(255, 196, 120, .16), transparent 70%), radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(8, 4, 2, .45));
+}
+.clous-tete { position: relative; z-index: 2; padding: 0 18px; }
+.clous-tete .dymo { transform: rotate(1.2deg); }
+.clous-regle { margin: 12px 0 0; font-size: 13.5px; line-height: 1.45; color: rgba(255, 242, 226, .86); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); max-width: 40ch; }
+.clous-regle strong { color: #FFF4DC; }
+
+.tapis-zone { --cm: calc(min(340px, 100vw - 36px) / 25); position: relative; z-index: 1; margin-top: 14px; padding: 80px 18px 150px; } /* (--cm : recalculé par js/co-clous.js sur la largeur de la carte) */
+/* le tapis de découpe : vert, quadrillé au centimètre (la carte fait 25 cm pour les mains de Clément), rayé, taché */
+.tapis {
+  position: absolute; left: 10px; right: -40px; top: 8px; bottom: 18px; z-index: 0; pointer-events: none;
+  transform: rotate(-1.8deg); transform-origin: 0 0; border-radius: 3px;
+  background:
+    linear-gradient(90deg, rgba(222, 226, 170, .4) 1px, transparent 1px) 18px 22px / calc(var(--cm) * 5) calc(var(--cm) * 5),
+    linear-gradient(rgba(222, 226, 170, .4) 1px, transparent 1px) 18px 22px / calc(var(--cm) * 5) calc(var(--cm) * 5),
+    linear-gradient(90deg, rgba(222, 226, 170, .2) .8px, transparent .8px) 18px 22px / var(--cm) var(--cm),
+    linear-gradient(rgba(222, 226, 170, .2) .8px, transparent .8px) 18px 22px / var(--cm) var(--cm),
+    linear-gradient(90deg, transparent 13px, rgba(222, 226, 170, .45) 13px 14px, transparent 14px),
+    linear-gradient(transparent 17px, rgba(222, 226, 170, .45) 17px 18px, transparent 18px),
+    radial-gradient(40% 30% at 70% 30%, rgba(10, 30, 22, .22), transparent 70%),
+    radial-gradient(30% 25% at 20% 75%, rgba(10, 30, 22, .2), transparent 70%),
+    linear-gradient(160deg, #336650, #2C5B47 45%, #28503F);
+  box-shadow: 0 0 0 1px rgba(10, 24, 18, .5), 3px 6px 10px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(200, 230, 200, .12);
+}
+.tapis-usure { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.tapis-regle { position: absolute; left: 16px; top: 4px; display: flex; font-family: var(--chiffres); font-weight: 600; font-size: 7px; line-height: 1; letter-spacing: -.02em; color: rgba(222, 226, 170, .58); }
+.tapis-regle span { flex: none; width: var(--cm); text-align: left; }
+.tapis-objets { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.tapis-objets > * { position: absolute; }
+.tapis-objets svg { width: 100%; height: 100%; overflow: visible; }
+.coupelle { right: max(10px, calc(50% - 170px)); top: 2px; width: 70px; height: 70px; }
+.clous-epars { right: max(84px, calc(50% - 96px)); top: 12px; width: 60px; height: 40px; }
+.maillet { left: 50%; bottom: 34px; width: 232px; height: 84px; margin-left: -96px; transform: rotate(-11deg); transform-origin: 72% 50%; transition: opacity .45s ease, transform .45s ease; }
+.tapis-zone.cloue .maillet { opacity: 0; transform: rotate(-4deg) translate(14px, 30px); } /* Clément l'a pris */
+
+/* la carte : le cuir posé sur le tapis, un peu d'épaisseur, l'ombre vers le bas à droite */
+#tickets .cuir {
+  z-index: 2; max-width: 340px;
+  background: var(--grain-cuir), radial-gradient(120% 130% at 25% 10%, #946441, #6E4629 45%, #4B2E1B);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 180, .3), inset 0 -2px 3px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(30, 16, 8, .35), 1px 2px 1px rgba(6, 3, 1, .55), 7px 12px 16px -4px rgba(6, 3, 1, .6);
+}
+#tickets .cuir-logo { top: 8.5%; width: 44%; }
+#tickets .cuir-grille { top: 42%; bottom: 7%; }
+.cuir-nom { position: absolute; left: 13%; right: 13%; top: 21%; height: 17.5%; z-index: 1; }
+.cuir-nom canvas.broderie { display: block; max-width: none; }
+.cuir-nom-vide {
+  position: absolute; inset: -4px -6px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+  font-family: var(--stylo); font-size: 19px; line-height: 1; color: rgba(214, 210, 200, .5); letter-spacing: .02em;
+  -webkit-tap-highlight-color: transparent;
+}
+.cuir-nom-vide::after { /* la ligne à coudre, en pointillés */
+  content: ''; position: absolute; left: 8%; right: 8%; bottom: 3px; height: 0; border-bottom: 1.4px dashed rgba(233, 217, 182, .36);
+}
+.broderie-aiguille {
+  position: absolute; left: 0; top: 0; z-index: 2; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, #fff 0 22%, rgba(255, 246, 214, .7) 40%, transparent 70%);
+  box-shadow: 0 0 8px 2px rgba(255, 236, 190, .45);
+}
+#tickets .cuir-num { color: rgba(233, 217, 182, .55); }
+#tickets .cuir-plein { z-index: 3; }
+
+.clous-actions { position: relative; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 6px 18px 0; }
+.clous-actions .btn { min-height: 50px; }
+.clous-actions .btn[hidden] { display: none; }
+.btn-craie { background: rgba(255, 242, 226, .06); color: var(--creme); border-color: rgba(255, 242, 226, .5); }
+.btn-craie:hover { background: rgba(255, 242, 226, .12); }
+.clous-note { position: relative; z-index: 2; text-align: center; font-size: 12.5px; color: rgba(255, 242, 226, .66); margin: 12px 18px 0; }
+.clous-compte { position: relative; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 2px 8px; margin: 10px 18px 0; font-size: 12.5px; color: rgba(255, 242, 226, .78); text-align: center; }
+.clous-compte:empty { display: none; }
+.clous-compte b { font-weight: 700; color: #FFF4DC; }
+.clous-compte .lien-discret { color: var(--ticket); font-size: 12.5px; }
+
+/* ======================================================================
+   La fiche du compte : une étiquette kraft qu'on remplit au stylo
+   ====================================================================== */
+.sheet-compte { padding-bottom: calc(26px + var(--safe-b)); }
+.compte-chapo { margin: -8px 0 14px; color: var(--encre-2); font-size: 14px; }
+.fiche { filter: drop-shadow(0 10px 12px rgba(70, 48, 20, .28)) drop-shadow(0 1px 1px rgba(0, 0, 0, .12)); }
+.fiche-tag {
+  position: relative; max-width: 440px; margin: 16px auto 0; padding: 36px 18px 18px; color: #3A2A18;
+  background: var(--grain), linear-gradient(180deg, #DBC196, var(--kraft) 38%, #C5A477);
+  border-radius: 0 0 10px 10px;
+  clip-path: polygon(0 28px, 28px 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 0 100%);
+  box-shadow: inset 0 -2px 0 rgba(90, 60, 25, .16);
+}
+.fiche-oeillet {
+  position: absolute; left: 50%; top: 11px; width: 15px; height: 15px; margin-left: -7.5px; border-radius: 50%;
+  background: radial-gradient(circle, var(--papier) 0 34%, #CFC8B8 41%, #8E887C 58%, #EAE4D6 73%, #A49D8F 88%);
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, .3);
+}
+.fiche-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0 0 12px; }
+.fiche-tete span { font-family: var(--chiffres); font-weight: 800; font-size: 15px; letter-spacing: .18em; }
+.fiche-tete small { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #6A5238; }
+.fiche-cuir {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 0 14px; padding: 11px 14px 10px; border-radius: 8px;
+  background: var(--grain-cuir), radial-gradient(120% 140% at 25% 0%, #946441, #6E4629 50%, #4B2E1B);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 180, .25), inset 0 -1px 2px rgba(0, 0, 0, .35), 0 2px 4px rgba(40, 20, 8, .35);
+}
+.fiche-cuir::before { content: ''; position: absolute; inset: 4px; border: 1.2px dashed rgba(233, 217, 182, .6); border-radius: 5px; pointer-events: none; }
+.fiche-logo { width: 38%; max-width: 130px; color: rgba(43, 25, 14, .6); filter: drop-shadow(0 1px 0 rgba(255, 220, 180, .22)); }
+.fiche-logo svg { width: 100%; height: auto; }
+.fiche-apercu {
+  max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-family: var(--main); font-weight: 800; font-size: 21px; line-height: 1.15; color: #EEC53E;
+  text-shadow: 0 1px 0 rgba(90, 60, 8, .8), .6px 1.2px 1.5px rgba(10, 5, 2, .6);
+}
+.fiche-apercu.vide { font-family: var(--stylo); font-weight: 400; font-size: 19px; color: rgba(214, 210, 200, .55); text-shadow: none; border-bottom: 1.3px dashed rgba(233, 217, 182, .4); }
+.fiche-champ { display: block; margin: 0 0 12px; }
+.fiche-champ span { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #6A5238; margin-bottom: 1px; }
+.fiche-champ input {
+  width: 100%; margin: 0; padding: 4px 2px 3px; border: 0; border-radius: 0; outline: none; background: transparent;
+  border-bottom: 1.6px dotted rgba(70, 48, 20, .6);
+  font-family: var(--stylo); font-weight: 400; font-size: 26px; line-height: 1.15; color: var(--encre-bleue);
+}
+.fiche-champ input::placeholder { color: rgba(29, 44, 94, .3); }
+.fiche-champ input:focus { border-bottom-color: var(--encre-bleue); border-bottom-style: solid; }
+.fiche-champ.erreur input { border-bottom-color: var(--pastille); border-bottom-style: solid; }
+.fiche-champ .champ-msg { color: #A3261D; font-style: normal; }
+.fiche-accord { position: relative; display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; margin: 4px 0 0; cursor: pointer; font-size: 13px; line-height: 1.38; color: #3A2A18; }
+.fiche-accord input { position: absolute; opacity: 0; width: 24px; height: 24px; margin: 0; pointer-events: none; }
+.fiche-trou { width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; box-shadow: inset 0 0 0 1.6px rgba(70, 48, 20, .55); transition: all .25s cubic-bezier(.3, 1.6, .5, 1); }
+.fiche-accord input:checked + .fiche-trou { background: radial-gradient(circle, #2A221D 0 47%, #6B6255 55%, #E9DCC0 63%, rgba(0, 0, 0, 0) 70%); box-shadow: none; transform: scale(1.1); }
+.fiche-accord input:focus-visible + .fiche-trou { outline: 2px solid #2A2310; outline-offset: 2px; }
+.fiche-accord.erreur .fiche-trou { box-shadow: inset 0 0 0 2px var(--pastille), 0 0 0 3px rgba(224, 58, 46, .2); }
+.fiche-accord-t small { display: block; margin-top: 3px; font-size: 11.5px; color: #6A5238; }
+.fiche-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 440px; margin: 16px auto 0; }
+.fiche-actions .btn svg { width: 20px; height: 20px; }
+.fiche-oublier { color: var(--encre-3); font-size: 13px; }
+
+/* ---------- sur l'accueil : le ticket en cours, pendu à son clou ---------- */
+.accueil-ticket .accroche { max-width: 250px; margin: 0 auto; --fil: 18px; }
+.accueil-ticket .accroche-point.clou { background: radial-gradient(circle at 35% 30%, #F2E6C8, #B9A580 45%, #6E5E43 85%); }
+.accueil-ticket .s-oeillet, .merci .s-oeillet { --trou: var(--papier); }
+.accueil-ticket .s-poincons i.fait, .accueil-ticket .s-poincons i.ici, .merci .s-poincons i.fait, .merci .s-poincons i.ici { /* le trou laisse voir la page */
+  background: radial-gradient(circle at 62% 68%, #F4EBDC, #DCCDB2 75%); box-shadow: inset 1.2px 1.6px 1.2px rgba(70, 48, 10, .55), 0 .6px 0 rgba(255, 250, 220, .6);
+}
+.merci .souche { margin-bottom: 8px; }
+
+/* ---------- plus large ---------- */
+@media (min-width: 420px) {
+  .tableau { gap: 30px 20px; padding: 0 18px; }
+  .s-papier { padding: 26px 13px 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pendule { transform: rotate(var(--incl, 0deg)) !important; }
+}

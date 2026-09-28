@@ -739,5 +739,218 @@
     return { el: root, remettre, detruire };
   }
 
-  CO.Lacets = { create };
+  /* ======================================================================
+     Le logo au lacet : CORDO63 à l'encre noire sur le crème, un lacet plat rouge qui passe
+     dessus, dessous, d'une lettre à l'autre comme dans des œillets, et ressort des deux côtés
+     jusqu'à ses ferrets. Les lettres sont les vrais tracés du logo (CO.BRAND.lettres, jamais une
+     police) ; les croisements se trouvent tout seuls (on lit les tracés M/L/C du logo, on cherche
+     où les traits entrent dans la bande du lacet) et alternent dessus / dessous, avec leurs ombres
+     de contact. Tout est calculé : aucune mesure dans la page, le même dessin partout.
+       CO.Lacets.logoSVG({ forme, encre, lacet, fond, k, id })  → une chaîne SVG autonome
+       CO.Lacets.logo(o)                                         → l'élément <svg>
+     forme : 'ligne' (le mot, large), 'carre' (l'icône : le mot au milieu, le lacet qui pend des
+     deux côtés ; k < 1 le resserre pour la zone sûre des icônes masquables), 'signe' (« 63 »,
+     traits plus gras, pour le favicon).
+     ====================================================================== */
+  const FORMES = {
+    ligne: {
+      lettres: [0, 1, 2, 3, 4, 5, 6], trait: 11.9, w: 24,
+      pts: [[-168, 98], [-80, 62], [9, 42], [160, 55], [325, 72], [465, 70], [607, 60], [773, 69], [994, 71], [1080, 58], [1168, 22]],
+      vb: [-196, -12, 1392, 136], chevrons: true,
+    },
+    carre: { // l'icône, sur deux lignes : CORDO, puis 63 centré dessous ; le lacet les lace en Z, comme les deux rangs d'œillets d'une chaussure
+      lettres: [0, 1, 2, 3, 4, [5, -510.45, 158], [6, -510.45, 158]], trait: 11.9, w: 25, ferret0: false,
+      pts: [[-430, -150], [-160, 0], [9, 52], [160, 60], [325, 72], [465, 70], [607, 62], [744, 60], [800, 86], [806, 150], [758, 206], [660, 224], [520, 228], [352, 227], [262, 226], [200, 246], [172, 318], [192, 392]],
+      vb: [-72, -315, 890, 890], chevrons: true,
+    },
+    signe: {
+      lettres: [5, 6], trait: 22, w: 19, ferrets: false, liseres: false, pas: 6,
+      pts: [[640, 73.5], [773, 71.45], [862, 71.45], [930, 71.45], [994, 71.45], [1120, 70]],
+      vb: [751, -76, 264, 264], chevrons: false,
+    },
+  };
+  // un tracé du logo (M, L, C, Z absolus) en polylignes (une par sous-chemin)
+  function polylignes(d, pas = 1.2) {
+    const tok = d.match(/[MLCZ]|-?\d*\.?\d+(?:e-?\d+)?/gi) || [];
+    const out = [];
+    let i = 0, cmd = '', x = 0, y = 0, x0 = 0, y0 = 0, cur = null;
+    const num = () => parseFloat(tok[i++]);
+    while (i < tok.length) {
+      const t = tok[i];
+      if (/^[MLCZ]$/i.test(t)) {
+        cmd = t.toUpperCase(); i++;
+        if (cmd === 'Z' && cur) { // le segment de fermeture compte (le fût du D, par exemple)
+          const n = Math.max(1, Math.ceil(Math.hypot(x0 - x, y0 - y) / pas));
+          for (let k = 1; k <= n; k++) cur.push([x + ((x0 - x) * k) / n, y + ((y0 - y) * k) / n]);
+          x = x0; y = y0;
+        }
+        continue;
+      }
+      if (cmd === 'M') { x = num(); y = num(); x0 = x; y0 = y; cur = [[x, y]]; out.push(cur); cmd = 'L'; }
+      else if (cmd === 'L') {
+        const nx = num(), ny = num(), n = Math.max(1, Math.ceil(Math.hypot(nx - x, ny - y) / pas));
+        for (let k = 1; k <= n; k++) cur.push([x + ((nx - x) * k) / n, y + ((ny - y) * k) / n]);
+        x = nx; y = ny;
+      } else if (cmd === 'C') {
+        const x1 = num(), y1 = num(), x2 = num(), y2 = num(), x3 = num(), y3 = num();
+        const n = Math.max(2, Math.ceil((Math.hypot(x1 - x, y1 - y) + Math.hypot(x2 - x1, y2 - y1) + Math.hypot(x3 - x2, y3 - y2)) / pas));
+        for (let k = 1; k <= n; k++) {
+          const t2 = k / n, v = 1 - t2;
+          cur.push([v * v * v * x + 3 * v * v * t2 * x1 + 3 * v * t2 * t2 * x2 + t2 * t2 * t2 * x3, v * v * v * y + 3 * v * v * t2 * y1 + 3 * v * t2 * t2 * y2 + t2 * t2 * t2 * y3]);
+        }
+        x = x3; y = y3;
+      } else i++;
+    }
+    return out;
+  }
+  // la ligne médiane du lacet : Catmull-Rom par ses points de passage, rééchantillonnée à pas régulier
+  function ligneMediane(pts, pas = 1.5) {
+    const dense = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+      for (let k = 0; k < 32; k++) {
+        const t = k / 32, t2 = t * t, t3 = t2 * t;
+        dense.push([0, 1].map((j) => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3)));
+      }
+    }
+    dense.push(pts[pts.length - 1]);
+    const X = [dense[0][0]], Y = [dense[0][1]], S = [0];
+    let acc = 0, reste = 0;
+    for (let i = 1; i < dense.length; i++) {
+      const [ax, ay] = dense[i - 1], [bx, by] = dense[i];
+      const seg = Math.hypot(bx - ax, by - ay);
+      let pos = pas - reste;
+      while (pos <= seg) { const t = pos / seg; X.push(ax + (bx - ax) * t); Y.push(ay + (by - ay) * t); acc += pas; S.push(acc); pos += pas; }
+      reste = seg - (pos - pas);
+    }
+    const n = X.length, NX = [], NY = [];
+    for (let k = 0; k < n; k++) { // la normale « vers le haut » (à gauche de la marche)
+      const a = Math.max(0, k - 1), b = Math.min(n - 1, k + 1);
+      const tx = X[b] - X[a], ty = Y[b] - Y[a], q = Math.hypot(tx, ty) || 1;
+      NX.push(ty / q); NY.push(-tx / q);
+    }
+    return { X, Y, S, NX, NY, n, L: S[n - 1] };
+  }
+  // où les traits des lettres entrent dans la bande du lacet : des zones [u0, u1] le long du lacet
+  function zonesCroisement(traits, C, rayon) {
+    const G = new Map(), cell = 24;
+    for (let k = 0; k < C.n; k++) {
+      const key = Math.floor(C.X[k] / cell) + ':' + Math.floor(C.Y[k] / cell);
+      if (!G.has(key)) G.set(key, []);
+      G.get(key).push(k);
+    }
+    const us = [];
+    traits.forEach((pl) => pl.forEach(([px, py]) => {
+      const cx = Math.floor(px / cell), cy = Math.floor(py / cell);
+      let best = Infinity, bk = -1;
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+        const l = G.get(cx + a + ':' + (cy + b));
+        if (l) l.forEach((k) => { const d = (px - C.X[k]) ** 2 + (py - C.Y[k]) ** 2; if (d < best) { best = d; bk = k; } });
+      }
+      if (bk >= 0 && Math.sqrt(best) < rayon) us.push([C.S[bk], Math.sqrt(best)]);
+    }));
+    us.sort((a, b) => a[0] - b[0]);
+    const zones = [];
+    us.forEach(([v, d]) => { const z = zones[zones.length - 1]; if (z && v - z[1] < 5) { z[1] = v; z[2] = Math.min(z[2], d); } else zones.push([v, v, d]); });
+    return zones.filter((z) => z[2] < rayon - 2.6); // un vrai croisement : le trait entre dans le lacet d'au moins deux unités
+  }
+  function logoSVG(o = {}) {
+    const F = FORMES[o.forme] || FORMES.ligne;
+    const B = CO.BRAND;
+    if (!B) return '';
+    const id = o.id || 'lg' + (++instances);
+    const encre = o.encre || '#1E1A17', rougeHex = o.lacet || '#D8352A';
+    const t = F.trait, w = F.w, hw = w / 2;
+    const r = rgb(rougeHex);
+    const C = ligneMediane(F.pts);
+    // une lettre : son indice, ou [indice, dx, dy] (la même lettre, déplacée : l'icône sur deux lignes)
+    const lettres = F.lettres.map((e) => { const [i, dx = 0, dy = 0] = [].concat(e); return { l: B.lettres[i], dx, dy }; });
+    const lettresD = lettres.map(({ l, dx, dy }) => (dx || dy ? `<path transform="translate(${dx} ${dy})" d="${l.d}"/>` : `<path d="${l.d}"/>`)).join('');
+    const traits = [];
+    lettres.forEach(({ l, dx, dy }) => polylignes(l.d).forEach((pl) => traits.push(dx || dy ? pl.map(([x, y]) => [x + dx, y + dy]) : pl)));
+    // les ferrets aux deux bouts, la bande entre les deux (qui s'amincit dans les ferrets)
+    const La = w * 1.05, Tp = w * 0.55, da = w * 0.4;
+    const k0 = Math.round(La / 1.5), k1 = C.n - 1 - k0;
+    const demi = (k) => { const u = C.S[k], bout = Math.min(u - La, C.L - La - u); return hw * (0.34 + 0.66 * lisse(bout / Tp)); };
+    const P = (k, o2) => [C.X[k] + C.NX[k] * o2, C.Y[k] + C.NY[k] * o2];
+    const fmt = (p) => f1(p[0]) + ' ' + f1(p[1]);
+    const pasK = F.pas || 3; // un point sur trois en sortie (4,5 unités : la courbe reste lisse, le fichier léger)
+    const indices = (ka, kb) => { const l = []; for (let k = ka; k < kb; k += pasK) l.push(k); l.push(kb); return l; };
+    const ruban = (a, b, ka = k0, kb = k1, marge = 0) => {
+      const ks = indices(ka, kb);
+      let s = '';
+      ks.forEach((k, j) => { s += (j ? 'L' : 'M') + fmt(P(k, (demi(k) + marge) * a)); });
+      for (let j = ks.length - 1; j >= 0; j--) s += 'L' + fmt(P(ks[j], (demi(ks[j]) + marge) * b));
+      return s + 'Z';
+    };
+    const bord = (a) => indices(k0, k1).map((k, j) => (j ? 'L' : 'M') + fmt(P(k, demi(k) * a))).join('');
+    // les croisements : dessus, dessous, en alternance le long du lacet (le premier : dessus)
+    const zones = zonesCroisement(traits, C, hw + t / 2 + 0.8).map(([u0, u1], i) => ({ u0: u0 - t * 0.35 - 2, u1: u1 + t * 0.35 + 2, dessus: i % 2 === 0 }));
+    if (o.zones) o.zones(zones.map((z) => ({ x: +C.X[clamp(Math.round((z.u0 + z.u1) / 3), 0, C.n - 1)].toFixed(1), u0: +z.u0.toFixed(1), u1: +z.u1.toFixed(1), dessus: z.dessus })));
+    const kDe = (u) => clamp(Math.round(u / 1.5), k0, k1);
+    const dessus = zones.filter((z) => z.dessus).map((z) => ruban(1, -1, kDe(z.u0), kDe(z.u1), 6)).join('');
+    // la trame : chevrons (crêtes claires, creux sombres)
+    let crete = '', creux = '';
+    if (F.chevrons) {
+      const pasT = w * 0.13;
+      for (let m = 0, u = C.S[k0] + 1; u < C.S[k1] - w * 0.6; m++, u += pasT) {
+        const k = kDe(u), h = demi(k) * 0.88, kb = kDe(u + demi(k) * 0.8);
+        const seg = 'M' + fmt(P(k, h)) + 'L' + fmt(P(kb, 0)) + 'L' + fmt(P(k, -h));
+        if (m % 2) crete += seg; else creux += seg;
+      }
+    }
+    // les ferrets (tubes rigides dans l'axe du bout)
+    const ferret = (k, sens) => {
+      const tx = (C.X[Math.min(C.n - 1, k + 1)] - C.X[Math.max(0, k - 1)]) * sens, ty = (C.Y[Math.min(C.n - 1, k + 1)] - C.Y[Math.max(0, k - 1)]) * sens;
+      const a = (Math.atan2(ty, tx) * 180) / Math.PI, flip = tx < 0 ? -1 : 1, rr = da / 2, tip = rr * 0.84;
+      const corps = `M0 ${f1(-rr * 1.06)}L${f1(La - tip)} ${f1(-tip)}Q${f1(La + tip * 0.15)} ${f1(-tip)} ${f1(La + tip * 0.15)} 0Q${f1(La + tip * 0.15)} ${f1(tip)} ${f1(La - tip)} ${f1(tip)}L0 ${f1(rr * 1.06)}Z`;
+      return `<g transform="translate(${f1(C.X[k])} ${f1(C.Y[k])}) rotate(${f1(a)}) scale(1 ${flip})">` +
+        `<ellipse cx="${f1(La * 0.5 + 1.5)}" cy="${f1(rr + 1.8)}" rx="${f1(La * 0.55)}" ry="${f1(rr * 0.8)}" fill="#3A2410" opacity=".22" filter="url(#${id}f)"/>` +
+        `<path d="${corps}" fill="url(#${id}a)" stroke="#000" stroke-opacity=".35" stroke-width=".5"/>` +
+        `<path d="M1.6 ${f1(-rr * 0.46)}L${f1(La - tip * 0.9)} ${f1(-tip * 0.42)}" stroke="#fff" stroke-opacity=".7" stroke-width="${f1(Math.max(0.6, rr * 0.22))}" stroke-linecap="round" fill="none"/>` +
+        `<path d="M1.4 ${f1(-rr)}V${f1(rr)}" stroke="#000" stroke-opacity=".4" stroke-width=".6"/></g>`;
+    };
+    const [vx, vy, vw, vh] = F.vb;
+    const k = o.k || 1; // < 1 : on resserre autour du centre (zone sûre des icônes masquables)
+    const cx = vx + vw / 2, cy = vy + vh / 2;
+    const fond = o.fond ? `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" rx="${o.arrondi || 0}" fill="${o.fond}"/>` : '';
+    const sombre = hex(melange(r, NOIR, 0.4)), tranche = hex(melange(r, NOIR, 0.32));
+    return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="${vx} ${vy} ${vw} ${vh}" role="img" aria-label="CORDO63">` +
+      `<defs>` +
+      `<filter id="${id}f" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="${f1(w * 0.09)}"/></filter>` +
+      `<linearGradient id="${id}a" gradientUnits="userSpaceOnUse" x1="0" y1="${f1(-da / 2)}" x2="0" y2="${f1(da / 2)}">` +
+      `<stop offset="0" stop-color="#070708"/><stop offset=".2" stop-color="#3C3C40"/><stop offset=".3" stop-color="#A5A5AC"/><stop offset=".4" stop-color="#2C2C30"/><stop offset=".75" stop-color="#131315"/><stop offset="1" stop-color="#040405"/></linearGradient>` +
+      `<path id="${id}b" d="${ruban(1, -1)}"/>` +
+      `<g id="${id}t">${lettresD}</g>` +
+      `<clipPath id="${id}c"><use href="#${id}b" xlink:href="#${id}b"/></clipPath>` +
+      `<clipPath id="${id}d"><path d="${dessus || 'M0 0'}"/></clipPath>` +
+      `<mask id="${id}m" maskUnits="userSpaceOnUse" x="${vx}" y="${vy}" width="${vw}" height="${vh}"><g fill="none" stroke="#fff" stroke-width="${t}" stroke-linejoin="miter"><use href="#${id}t" xlink:href="#${id}t"/></g></mask>` +
+      `<g id="${id}l">` +
+      `<use href="#${id}b" xlink:href="#${id}b" fill="${tranche}" transform="translate(.3 ${f1(w * 0.06)})"/>` +
+      `<use href="#${id}b" xlink:href="#${id}b" fill="${rougeHex}" stroke="${sombre}" stroke-width="${f1(w * 0.025)}"/>` +
+      (crete ? `<path d="${creux}" fill="none" stroke="#000" stroke-opacity=".2" stroke-width="${f1(w * 0.04)}" stroke-linecap="round" stroke-linejoin="round"/><path d="${crete}" fill="none" stroke="#fff" stroke-opacity=".15" stroke-width="${f1(w * 0.03)}" stroke-linecap="round" stroke-linejoin="round"/>` : '') +
+      (F.liseres === false ? '' : `<path d="${bord(0.8)}" fill="none" stroke="#fff" stroke-opacity=".32" stroke-width="${f1(w * 0.05)}" stroke-linecap="round"/>` +
+      `<path d="${bord(-0.83)}" fill="none" stroke="#000" stroke-opacity=".3" stroke-width="${f1(w * 0.085)}" stroke-linecap="round"/>`) +
+      `</g>` +
+      `<g id="${id}o"><use href="#${id}b" xlink:href="#${id}b" fill="#2A1408" opacity=".28" transform="translate(${f1(w * 0.07)} ${f1(w * 0.14)})" filter="url(#${id}f)"/></g>` +
+      `</defs>` +
+      fond +
+      `<g transform="translate(${f1(cx)} ${f1(cy)}) scale(${k}) translate(${f1(-cx)} ${f1(-cy)})">` +
+      `<use href="#${id}o" xlink:href="#${id}o"/>` + // l'ombre du lacet sur le papier
+      `<use href="#${id}l" xlink:href="#${id}l"/>` + // le lacet, dessous
+      `<g clip-path="url(#${id}c)" opacity=".4"><g fill="none" stroke="#2A1408" stroke-width="${t}" transform="translate(${f1(t * 0.14)} ${f1(t * 0.28)})" filter="url(#${id}f)"><use href="#${id}t" xlink:href="#${id}t"/></g></g>` + // l'ombre des lettres sur le lacet
+      `<g fill="none" stroke="${encre}" stroke-width="${t}" stroke-linejoin="miter"><use href="#${id}t" xlink:href="#${id}t"/></g>` + // les lettres
+      `<g clip-path="url(#${id}d)"><g mask="url(#${id}m)"><use href="#${id}o" xlink:href="#${id}o"/></g><use href="#${id}l" xlink:href="#${id}l"/></g>` + // le lacet, dessus (et son ombre sur les traits)
+      (F.ferrets === false || F.ferret0 === false ? '' : ferret(k0, -1)) + (F.ferrets === false ? '' : ferret(k1, 1)) +
+      `</g></svg>`;
+  }
+  function logo(o) {
+    const d = document.createElement('div');
+    d.innerHTML = logoSVG(o);
+    const s = d.firstChild;
+    if (s) { s.setAttribute('aria-hidden', 'true'); s.setAttribute('focusable', 'false'); s.removeAttribute('role'); }
+    return s;
+  }
+
+  CO.Lacets = { create, logo, logoSVG, sons, palette: (couleur) => palette({ couleur }), METAUX };
 })();

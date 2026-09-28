@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Labo · le logo au lacet</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<style>
+  /* Le logo au lacet (CO.Lacets.logo) : le mot, l'icône carrée (et sa zone sûre), le favicon à plusieurs tailles.
+     Paramètres : ?forme=ligne|carre|signe (une seule, en grand) ?k=0.8 */
+  html, body { margin: 0; background: #E9DECB; font: 13px/1.4 system-ui, sans-serif; color: #2B2420; }
+  main { display: grid; gap: 24px; padding: 24px; justify-items: start; }
+  .case { background: #FFF2E2; padding: 18px; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 10px 24px -14px rgba(0,0,0,.4); }
+  .case p { margin: 8px 0 0; color: #6F6559; }
+  .mot svg { width: min(92vw, 900px); height: auto; display: block; }
+  .carre { display: flex; gap: 18px; align-items: end; flex-wrap: wrap; }
+  .carre svg { display: block; border-radius: 22%; box-shadow: 0 6px 16px -8px rgba(0,0,0,.45); }
+  .masque { position: relative; }
+  .masque::after { content: ''; position: absolute; inset: 10%; border-radius: 50%; border: 1.5px dashed rgba(224, 58, 46, .7); pointer-events: none; }
+  .fav { display: flex; gap: 14px; align-items: end; }
+  .fav span { display: grid; justify-items: center; gap: 4px; }
+  .fav svg { display: block; }
+  .seul svg { width: min(96vw, 1200px); height: auto; display: block; }
+</style>
+</head>
+<body>
+<main id="m"></main>
+<script src="../js/co-core.js"></script>
+<script src="../js/co-brand.js"></script>
+<script src="../js/co-lacets.js"></script>
+<script>
+  const q = new URLSearchParams(location.search);
+  const m = document.getElementById('m');
+  const L = CO.Lacets;
+  if (q.has('forme')) {
+    const d = document.createElement('div');
+    d.className = 'seul';
+    d.innerHTML = L.logoSVG({ forme: q.get('forme'), fond: '#FFF2E2', k: +q.get('k') || 1 });
+    m.appendChild(d);
+  } else {
+    m.innerHTML = `
+      <section class="case mot"><div id="mot"></div><p>assets/brand/logo-cordo63-lacet.svg : le mot, le lacet dessus, dessous</p></section>
+      <section class="case"><div class="carre" id="carre"></div><p>l'icône (512, 192, 60) ; à droite, la version masquable et sa zone sûre (80 %)</p></section>
+      <section class="case"><div class="fav" id="fav"></div><p>le favicon : 64, 32, 16 px</p></section>`;
+    document.getElementById('mot').innerHTML = L.logoSVG({ forme: 'ligne' });
+    const carre = document.getElementById('carre');
+    [[256, 1], [96, 1], [60, 1]].forEach(([s, k]) => { const e = document.createElement('div'); e.innerHTML = L.logoSVG({ forme: 'carre', fond: '#FFF2E2', k }); e.firstChild.setAttribute('width', s); e.firstChild.setAttribute('height', s); carre.appendChild(e); });
+    const mk = document.createElement('div'); mk.className = 'masque'; mk.innerHTML = L.logoSVG({ forme: 'carre', fond: '#FFF2E2', k: 0.8 }); mk.firstChild.setAttribute('width', 256); mk.firstChild.setAttribute('height', 256); carre.appendChild(mk);
+    const fav = document.getElementById('fav');
+    [64, 32, 16].forEach((s) => { const e = document.createElement('span'); e.innerHTML = L.logoSVG({ forme: 'signe', fond: '#FFF2E2', arrondi: 46 }) + `<small>${s}</small>`; e.firstChild.setAttribute('width', s); e.firstChild.setAttribute('height', s); fav.appendChild(e); });
+  }
+  window.PRET = true;
+</script>
+</body>
+</html>
