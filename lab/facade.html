@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Labo · la devanture de Cordo 63</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<style>
+  /* Banc d'essai de la devanture : ?soir (ou ?nuit) ?ferme ?fige ?zone ?entre ?ardoise ?w=900&h=500 ?yaw=0.6
+     Les polices passent par les variables de l'appli (la devanture n'en nomme aucune) : on les définit ici. */
+  :root {
+    --large: 'Bricolage Grotesque', system-ui, sans-serif;
+    --sans: 'Bricolage Grotesque', system-ui, sans-serif;
+    --main: 'Covered By Your Grace', 'Segoe Print', cursive;
+    --chiffres: 'Big Shoulders', 'Arial Narrow', sans-serif;
+  }
+  html, body { margin: 0; background: #F4EEE3; color: #2B2F2A; font-family: var(--sans); overflow-x: hidden; }
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  /* l'hôte : la hauteur de l'accueil sur un téléphone (≈ 320 × 400 px sur un écran de 320 × 693) */
+  #facade { position: relative; width: 100%; height: min(125vw, 600px); overflow: hidden; }
+  /* les 80 px du haut : l'enseigne des horaires de l'appli pend par-dessus (?zone) */
+  .reserve { position: absolute; left: 0; right: 0; top: 0; height: 80px; border-bottom: 1.5px dashed #3E6B8A; background: rgba(62, 107, 138, .08); pointer-events: none; }
+  .reserve b, .zone b { position: absolute; left: 4px; top: 2px; font: 600 10px/1.2 var(--sans); }
+  .reserve b { color: #3E6B8A; }
+  .zone { position: absolute; border: 1.5px dashed #E0584B; pointer-events: none; box-sizing: border-box; }
+  .zone b { color: #E0584B; top: -14px; white-space: nowrap; }
+  .zone svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ancre { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: #E0584B; pointer-events: none; }
+  .ctl { padding: 12px 10px 4px; font-size: 13px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .ctl button { font: inherit; padding: 7px 12px; border-radius: 99px; border: 1px solid #56705A; background: #fff; color: #2B2F2A; cursor: pointer; }
+  .ctl button:focus { outline: none; }
+  .ctl button:focus-visible { outline: 2px solid #C9A15A; outline-offset: 2px; }
+  .ctl label { display: flex; align-items: center; gap: 6px; }
+  .note { padding: 4px 12px 24px; font-size: 12px; color: #6B6F68; }
+  #journal { font-weight: 600; color: #2E684B; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="facade"></div>
+  <div class="ctl">
+    <button id="b-play" type="button">Rejouer la construction</button>
+    <button id="b-nuit" type="button">Jour / soir</button>
+    <button id="b-ouvert" type="button">Ouvert / fermé</button>
+    <button id="b-entrer" type="button">Entrer / sortir</button>
+    <button id="b-porte" type="button">Toquer à la porte</button>
+    <label>Enseigne <input id="yaw" type="range" min="-1.57" max="1.57" step="0.01" value="0"></label>
+  </div>
+  <p class="note">Toucher : <span id="journal">—</span><br>Paramètres : ?soir · ?ferme · ?fige · ?zone · ?entre · ?ardoise · ?w=…&amp;h=… · ?yaw=…</p>
+</div>
+<script src="../js/co-core.js"></script>
+<script src="../js/co-facade.js"></script>
+<script>
+  (async () => {
+    const q = new URLSearchParams(location.search);
+    const host = document.getElementById('facade');
+    if (q.has('w')) { document.querySelector('.wrap').style.maxWidth = 'none'; host.style.width = q.get('w') + 'px'; }
+    if (q.has('h')) host.style.height = q.get('h') + 'px';
+    const f = await CO.Facade.create(host, { ardoise: q.has('ardoise') });
+    let nuit = q.has('soir') || q.has('nuit'), ouvert = !q.has('ferme'), dedans = false;
+    const texte = () => (ouvert ? 'Ouvert jusqu’à 19h' : 'Fermé · rouvre mardi à 10h');
+    f.setStatut({ ouvert, texte: texte() });
+    f.setNuit(nuit);
+    if (q.has('yaw')) { f.ombreEnseigne(+q.get('yaw')); document.getElementById('yaw').value = q.get('yaw'); }
+
+    // ?zone : la place réservée à l'enseigne (une silhouette provisoire de la Jordan, pointe en bas), le point
+    // d'ancrage de son bras, et les 80 px du haut où pend l'enseigne des horaires ; recalés par suivre()
+    if (q.has('zone')) {
+      const reserve = document.createElement('div');
+      reserve.className = 'reserve';
+      reserve.innerHTML = '<b>80 px : l’enseigne des horaires</b>';
+      const zoneEl = document.createElement('div');
+      zoneEl.className = 'zone';
+      zoneEl.innerHTML = '<b>zoneEnseigne</b><svg viewBox="0 0 70 112" preserveAspectRatio="none"><rect x="2" y="2" width="66" height="108" fill="none" stroke="#3B3E42" stroke-width="3"/><path d="M22 12C34 8 50 10 56 18C60 40 56 66 48 86C42 98 32 104 24 102C16 98 14 84 16 66C18 46 14 26 22 12Z" fill="#C9A26E" opacity=".85"/></svg>';
+      const ancreEl = document.createElement('div');
+      ancreEl.className = 'ancre';
+      host.append(reserve, zoneEl, ancreEl);
+      const recaler = () => {
+        const r = f.versEcran(f.zoneEnseigne), a = f.versEcran(f.ancreEnseigne);
+        Object.assign(zoneEl.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+        Object.assign(ancreEl.style, { left: a.left + 'px', top: a.top + 'px' });
+      };
+      recaler();
+      f.suivre(recaler);
+    }
+
+    const entrer = async () => { dedans = !dedans; if (dedans) await f.entrer(); else await f.sortir(); };
+    if (q.has('fige')) f.idle(true);
+    else { await f.play(); f.idle(); }
+    if (q.has('entre')) { dedans = true; f.entrer(q.has('fige') ? { ms: 0 } : {}); }
+
+    document.getElementById('b-play').onclick = () => f.play();
+    document.getElementById('b-nuit').onclick = () => { nuit = !nuit; f.setNuit(nuit); };
+    document.getElementById('b-ouvert').onclick = () => { ouvert = !ouvert; f.setStatut({ ouvert, texte: texte() }); };
+    document.getElementById('b-entrer').onclick = entrer;
+    document.getElementById('b-porte').onclick = async () => { await f.toquer(); setTimeout(() => f.fermerPorte(), 1200); };
+    document.getElementById('yaw').oninput = (e) => f.ombreEnseigne(+e.target.value);
+    // les zones de la devanture : l'événement 'cible' ; la boutique fait entrer (ou sortir) la caméra
+    f.on('cible', (id) => {
+      document.getElementById('journal').textContent = id;
+      if (id === 'boutique') entrer();
+    });
+    window.F = f;
+  })();
+</script>
+</body>
+</html>

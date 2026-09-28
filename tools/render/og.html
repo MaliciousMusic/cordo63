@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Image de partage Cordo 63</title>
+<link rel="stylesheet" href="../../css/fonts.css">
+<style>
+  html, body { margin: 0; }
+  body { width: 1200px; height: 630px; overflow: hidden; font-family: 'Bricolage Grotesque', sans-serif; }
+  /* à gauche : le crème du logo ; à droite : le tapis de découpe vert, et l'enseigne en bois quand le moteur 3D est là */
+  .og { position: relative; display: grid; grid-template-columns: 1fr 460px; width: 1200px; height: 630px; background: #FFF2E2; }
+  .g { display: flex; flex-direction: column; justify-content: center; padding: 0 70px; gap: 26px; color: #8A927B; }
+  .g svg { width: 620px; height: auto; overflow: visible; }
+  .accroche { font-weight: 750; letter-spacing: -.01em; font-size: 36px; line-height: 1.2; color: #2B2420; margin: 6px 0 0; }
+  .adr { font-size: 22px; color: #5E534A; margin: 0; }
+  .ticket { display: inline-flex; align-items: center; gap: 12px; align-self: flex-start; padding: 12px 22px 12px 40px; border-radius: 8px 18px 18px 8px; background: linear-gradient(180deg, #F7DB5A, #F2D24B); font-weight: 700; font-size: 22px; color: #2B2420; position: relative; transform: rotate(-2deg); box-shadow: 0 10px 20px -10px rgba(120,90,0,.8); }
+  .ticket::before { content: ''; position: absolute; left: 14px; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; background: radial-gradient(circle, #FFF2E2 0 35%, #C9C2B2 42%, #8E887C 62%, #D8D2C4 80%); }
+  .d { position: relative; background:
+      linear-gradient(rgba(190,225,200,.28) 1px, transparent 1px) 0 0 / 100% 30px,
+      linear-gradient(90deg, rgba(190,225,200,.28) 1px, transparent 1px) 0 0 / 30px 100%,
+      linear-gradient(rgba(190,225,200,.1) 1px, transparent 1px) 0 0 / 100% 6px,
+      linear-gradient(90deg, rgba(190,225,200,.1) 1px, transparent 1px) 0 0 / 6px 100%,
+      radial-gradient(120% 90% at 40% 30%, #33634F, #244A3D); }
+  #jordan { position: absolute; inset: 20px; }
+</style>
+</head>
+<body>
+<div class="og">
+  <div class="g">
+    <div id="logo"></div>
+    <p class="accroche">Le cordonnier des sneakers,<br>place du Mazet.</p>
+    <p class="adr">Talons, semelles, sneakers, sacs et clés · Clermont-Ferrand</p>
+    <span class="ticket">Déposez votre paire, suivez-la en ligne</span>
+  </div>
+  <div class="d"><div id="jordan"></div></div>
+</div>
+<script src="../../js/co-core.js"></script>
+<script src="../../js/co-brand.js"></script>
+<script src="../../js/co-jordan.js" onerror="void 0"></script>
+<script>
+  document.getElementById('logo').appendChild(CO.logo({ phrase: true, couleur: 'currentColor', couleurPhrase: '#6F7766' }));
+  if (window.CO && CO.Jordan && CO.Jordan.create) CO.Jordan.create(document.getElementById('jordan'), { mode: 'seule', pose: 'posee', interactive: false, yaw: 0.5, fige: true }).catch(() => {});
+</script>
+</body>
+</html>

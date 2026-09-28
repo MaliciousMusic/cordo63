@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Labo · l'établi</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<style>
+  /* (les mêmes variables que css/cordo.css : l'établi lit ses polices là) */
+  :root { --sans: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif; --main: 'Shantell Sans', 'Segoe Print', 'Bradley Hand', cursive; --chiffres: 'Big Shoulders', 'Arial Narrow', sans-serif; }
+  html, body { margin: 0; background: #17120f; color: #eadfcd; font-family: var(--sans); }
+  a { color: #f2d24b; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  #scene { position: relative; width: 100%; height: 340px; overflow: hidden; background: #1b1511; }
+  #scene canvas { display: block; }
+  .ctl { padding: 10px 10px 4px; font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .ctl button { font: inherit; font-size: 12px; padding: 5px 9px; border-radius: 99px; border: 1px solid #6e866a; background: #231c17; color: #eadfcd; }
+  .ctl button.on { background: #6e866a; color: #111; }
+  .ctl .t { width: 100%; opacity: 0.7; margin-top: 4px; }
+  #etiq { position: absolute; pointer-events: none; padding: 3px 7px; border-radius: 6px; background: rgba(242, 210, 75, 0.95); color: #1b1511; font-size: 12px; font-weight: 600; transform: translate(-50%, -100%); opacity: 0; transition: opacity 0.25s; white-space: nowrap; }
+  #planche { position: relative; }
+  #planche canvas { display: block; }
+  .lab { position: absolute; font-size: 10px; line-height: 1.15; color: #f4ecd9; text-shadow: 0 1px 2px #000, 0 0 6px #000; pointer-events: none; }
+  .lab b { font-weight: 700; font-size: 11px; }
+  #bilan { font-size: 12px; padding: 8px 12px 16px; white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; }
+  table { border-collapse: collapse; font-size: 11px; margin: 8px; }
+  td, th { padding: 2px 6px; border-bottom: 1px solid #3a302a; text-align: right; }
+  td:first-child, th:first-child { text-align: left; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="bilan"></div>
+<script src="../js/co-core.js"></script>
+<script src="../js/co-rendu.js"></script>
+<script src="../js/co-outils.js"></script>
+<script src="../js/co-etabli.js" onerror="window.__sansEtabli = true"></script>
+<script>
+/* Banc d'essai de l'établi.
+   ?planche                    les objets, sur le tapis (?ppm= px du canvas par mm ; ?pxmm= px CSS par mm ; ?ids=a,b ; ?angle= ;
+                               ?categorie=outil|piece|encombrement ; ?brut : sans la lumière de la lampe ni le grain)
+   ?disposition=services|vide  la scène, avec des boutons pour poser / retirer (clic) et montrer (clic droit) chaque objet ;
+                               ?h= hauteur de l'établi en px CSS (bandeau : 250 à 520) ; ?poser=a,b ; ?fige (sans animation) ;
+                               ?ppm= imposé ; ?graine=
+   ?bench                      temps de calcul de chaque objet (?ppmTel= la résolution de la scène au téléphone, ?ppm=) et du
+                               décor complet (établi + tapis + encombrement) aux formats de l'appli
+   ?nocache                    sans la mémoire du téléphone (IndexedDB) */
+(function () {
+  'use strict';
+  const q = new URLSearchParams(location.search);
+  const R = CO.R, O = CO.Outils;
+  const app = document.getElementById('app'), bilan = document.getElementById('bilan');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const log = (s) => { bilan.textContent += s + '\n'; };
+
+  /* ---------------- la planche ---------------- */
+  async function planche() {
+    const pxmm = +(q.get('pxmm') || 1.1);
+    const ppm = q.has('ppm') ? +q.get('ppm') : pxmm * dpr;
+    const cssmm = ppm / dpr; // px CSS par mm
+    const angle = +(q.get('angle') || 0);
+    const W = document.documentElement.clientWidth;
+    const Wmm = W / cssmm;
+    const ordre = { outil: 0, piece: 1, encombrement: 2 };
+    const cat = q.get('categorie');
+    const ids = q.get('ids') ? q.get('ids').split(',') : O.liste.filter((o) => o.categorie !== 'surface' && (!cat || o.categorie === cat))
+      .sort((a, b) => ordre[a.categorie] - ordre[b.categorie]).map((o) => o.id);
+    const t0 = performance.now();
+    const sps = [];
+    for (const id of ids) {
+      const ta = performance.now();
+      let sp;
+      try {
+        sp = await O.preparer(id, { ppm, angle, graine: +(q.get('graine') || 63), sansCoffre: true }, 2);
+      } catch (e) {
+        console.error(id, e);
+        log('ERREUR ' + id + ' : ' + e.message);
+        continue;
+      }
+      sps.push({ id, sp, ms: performance.now() - ta });
+    }
+    // rangement en étagères (mm) : l'objet + la place de son ombre + l'étiquette
+    const M = 7, LAB = 14 / cssmm;
+    let x = M, y = M + 6, hRow = 0;
+    const places = [];
+    for (const e of sps) {
+      const sp = e.sp, o = sp.ombre;
+      const w = sp.w + 6, h = sp.h + LAB + 8;
+      if (x + w > Wmm - M && x > M) { x = M; y += hRow; hRow = 0; }
+      places.push({ e, x: x + 3, y: y + LAB });
+      x += w + 4;
+      hRow = Math.max(hRow, h);
+      void o;
+    }
+    const Hmm = y + hRow + M;
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(Wmm * ppm);
+    cv.height = Math.round(Hmm * ppm);
+    cv.style.width = W + 'px';
+    cv.style.height = Hmm * cssmm + 'px';
+    const div = document.createElement('div');
+    div.id = 'planche';
+    div.appendChild(cv);
+    app.appendChild(div);
+    const g = cv.getContext('2d');
+    const tf = performance.now();
+    const bg = await R.lancer(O.fond({ cadre: { bx0: 0, by0: 0, w: cv.width, h: cv.height }, ppm, tapis: { x: Wmm / 2, y: Hmm / 2, angle: 0, W: Wmm - 10, H: Hmm - 10 }, oeil: { x: Wmm / 2, y: Hmm / 2 }, graine: 63 }), { prio: 2 });
+    const msFond = performance.now() - tf;
+    g.drawImage(bg.canvas, 0, 0);
+    for (const p of places) {
+      const sp = p.e.sp;
+      R.poser(g, sp, (p.x + sp.ax) * ppm, (p.y + sp.ay) * ppm, { objet: false });
+    }
+    for (const p of places) {
+      const sp = p.e.sp;
+      R.poser(g, sp, (p.x + sp.ax) * ppm, (p.y + sp.ay) * ppm, { ombre: false });
+    }
+    if (!q.has('brut')) R.photo(g, cv.width, cv.height, { foyer: [0.3, 0.02], force: 0.55 });
+    for (const p of places) {
+      const sp = p.e.sp;
+      const lab = document.createElement('div');
+      lab.className = 'lab';
+      lab.style.left = p.x * cssmm + 'px';
+      lab.style.top = (p.y - LAB) * cssmm + 'px';
+      const inf = O.info(p.e.id);
+      lab.innerHTML = '<b>' + inf.nom + '</b><br>' + inf.dim.join(' × ') + ' mm · ' + Math.round(sp.t.tout) + ' ms';
+      div.appendChild(lab);
+    }
+    log('planche : ' + sps.length + ' objets à ' + ppm.toFixed(2) + ' px/mm, calcul ' + Math.round(performance.now() - t0) + ' ms (fond ' + Math.round(msFond) + ' ms), pas le plus long ' + R.stats.pasMax.toFixed(1) + ' ms (' + R.stats.pasLent + ')');
+    document.body.dataset.pret = '1';
+  }
+
+  /* ---------------- le banc de mesure ---------------- */
+  async function banc() {
+    const ppmTel = +(q.get('ppmTel') || 1.45); // la scène « services » au téléphone (≈ 390 px CSS de large, dpr 2)
+    const ppmL = q.has('ppm') ? +q.get('ppm') : 3;
+    const ids = O.liste.map((o) => o.id).filter((id) => id !== 'tapis' && id !== 'etabli');
+    const tab = document.createElement('table');
+    tab.innerHTML = '<tr><th>objet</th><th>px</th><th>CPU ms ' + ppmTel + '</th><th>modèle</th><th>peint</th><th>relief</th><th>lumière</th><th>ombre</th><th>pas max</th><th>CPU ms ' + ppmL + '</th></tr>';
+    app.appendChild(tab);
+    let somme = 0, pasMaxG = 0;
+    for (const id of ids) {
+      const tr = document.createElement('tr');
+      tab.appendChild(tr);
+      try {
+        R.stats.pasMax = 0;
+        const p = O.preparer(id, { ppm: ppmTel, graine: 5 + Math.floor(Math.random() * 1000), sansCoffre: true }, 2);
+        const job = p.job;
+        const sp = await p;
+        const pm = job ? job.pasMax : R.stats.pasMax;
+        pasMaxG = Math.max(pasMaxG, pm);
+        const p2 = O.preparer(id, { ppm: ppmL, graine: 7 + Math.floor(Math.random() * 1000), sansCoffre: true }, 2);
+        const sp2 = await p2;
+        somme += sp.t.tout;
+        const f = (v) => (v == null ? '' : v.toFixed(0));
+        const cpu = job ? job.cpu : sp.t.tout, cpu2 = p2.job ? p2.job.cpu : sp2.t.tout;
+        somme += cpu - sp.t.tout;
+        tr.innerHTML = `<td>${id}</td><td>${(sp.px / 1000).toFixed(0)}k</td><td><b>${f(cpu)}</b></td><td>${f(sp.t.modele)}</td><td>${f(sp.t.peint)}</td><td>${f(sp.t.relief)}</td><td>${f(sp.t.lumiere)}</td><td>${f(sp.t.ombre)}</td><td>${pm.toFixed(1)}${pm > 12 && job ? ' <small>(' + job.pasLent + ')</small>' : ''}</td><td>${f(cpu2)}</td>`;
+      } catch (e) {
+        tr.innerHTML = `<td>${id}</td><td colspan=9>ERREUR ${e.message}</td>`;
+        console.error(e);
+      }
+    }
+    log('objets : ' + Math.round(somme) + ' ms de calcul au total à ' + ppmTel + ' px/mm ; tranche la plus longue ' + pasMaxG.toFixed(1) + ' ms');
+    // le décor de la scène (établi + tapis usé + encombrement), aux formats de l'appli, à la résolution de cet écran
+    if (CO.Etabli) {
+      const E = CO.Etabli;
+      for (const [w, h] of [[320, 260], [320, 340], [390, 340], [390, 520], [430, 250]]) {
+        const V = E._vue(w, h, 'services');
+        const opts = { disposition: 'services', graine: 63, encombrement: true };
+        const pb = R.lancer(E._genBase(V, opts), { prio: 2 });
+        const jb = pb.job;
+        await pb;
+        const pf = R.lancer(E._genFond(V, opts), { prio: 2 });
+        const jf = pf.job;
+        await pf;
+        const n = E._encombrer(V, 63).length;
+        log('décor ' + w + '×' + h + ' (' + V.W + '×' + V.H + ' px, ' + V.ppm + ' px/mm, ' + n + ' objets autour) : établi + tapis ' + Math.round(jb.cpu) + ' ms (1re fois, modèle compris), complet ' + Math.round(jf.cpu) + ' ms ; tranche max ' + Math.max(jb.pasMax, jf.pasMax).toFixed(1) + ' ms');
+      }
+    }
+    log('tranche la plus longue de toute la page : ' + R.stats.pasMax.toFixed(1) + ' ms (' + R.stats.pasLent + ')');
+    document.body.dataset.pret = '1';
+  }
+
+  /* ---------------- la scène ---------------- */
+  async function scene() {
+    const wrap = document.createElement('div');
+    wrap.className = 'wrap';
+    wrap.innerHTML = '<div id="scene"><div id="etiq"></div></div><div class="ctl" id="ctl"></div>';
+    app.appendChild(wrap);
+    const host = document.getElementById('scene');
+    if (q.get('h')) host.style.height = q.get('h') + 'px';
+    if (window.__sansEtabli || !CO.Etabli) { log('co-etabli.js absent'); return; }
+    const t0 = performance.now();
+    const opts = { disposition: q.get('disposition') || 'services', graine: +(q.get('graine') || 63) };
+    if (q.has('ppm')) opts.ppm = +q.get('ppm');
+    const E = await CO.Etabli.create(host, opts);
+    window.E = E;
+    log('scène prête en ' + Math.round(performance.now() - t0) + ' ms ; pas le plus long ' + R.stats.pasMax.toFixed(1) + ' ms');
+    const ctl = document.getElementById('ctl');
+    const etiq = document.getElementById('etiq');
+    const ids = O.liste.map((o) => o.id).filter((id) => id !== 'tapis' && id !== 'etabli');
+    ids.forEach((id) => {
+      const b = document.createElement('button');
+      b.textContent = O.info(id).nom.split(' (')[0];
+      b.dataset.sfx = 'none';
+      const maj = () => b.classList.toggle('on', E.objets.includes(id));
+      b.onclick = async () => {
+        if (E.objets.includes(id)) E.retirer(id);
+        else await E.poser(id, { anime: true });
+        maj();
+      };
+      b.oncontextmenu = (ev) => { ev.preventDefault(); montrer(id); };
+      maj();
+      ctl.appendChild(b);
+    });
+    const bv = document.createElement('button');
+    bv.textContent = 'Vider';
+    bv.onclick = () => { E.vider(); ctl.querySelectorAll('button').forEach((x) => x.classList.remove('on')); };
+    ctl.appendChild(bv);
+    const t = document.createElement('div');
+    t.className = 't';
+    t.textContent = 'Clic : poser / retirer · clic droit : montrer · toucher un objet sur l’établi : son nom';
+    ctl.appendChild(t);
+    function montrer(id) {
+      const r = E.montrer(id);
+      if (!r) return;
+      etiq.textContent = O.info(id).nom;
+      etiq.style.left = r.x + r.w / 2 + 'px';
+      etiq.style.top = r.y - 4 + 'px';
+      etiq.style.opacity = 1;
+      clearTimeout(etiq._t);
+      etiq._t = setTimeout(() => (etiq.style.opacity = 0), 1800);
+    }
+    E.on('tap', (id) => montrer(id));
+    if (q.get('poser')) {
+      for (const id of q.get('poser').split(',')) await E.poser(id, { anime: !q.has('fige') });
+    }
+    document.body.dataset.pret = '1';
+  }
+
+  window.addEventListener('error', (e) => log('ERREUR ' + e.message));
+  window.addEventListener('unhandledrejection', (e) => log('ERREUR ' + (e.reason && e.reason.message)));
+  if (q.has('planche')) planche();
+  else if (q.has('bench')) banc();
+  else scene();
+})();
+</script>
+</body>
+</html>

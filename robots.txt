@@ -1,0 +1,15 @@
+# Cordo 63 — maquette (noindex tant que le client n'a pas validé)
+User-agent: *
+Allow: /
+
+# Assistants IA bienvenus (la fiche de synthèse : /llms.txt)
+User-agent: GPTBot
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://maliciousmusic.github.io/cordo63/sitemap.xml

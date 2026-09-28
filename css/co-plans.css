@@ -1,0 +1,44 @@
+/* ==========================================================================
+   Cordo 63 — les plans animés : où les poser dans la page
+   (le papier bleu, le trait et les animations des plans sont injectés par js/co-plans.js ;
+   ce fichier ne place que la vignette dans la ligne du catalogue et habille la feuille)
+   ========================================================================== */
+
+/* ---------- la vignette, à gauche de la ligne : li.ligne.a-plan > button.plan-mini > span.plan (deux <svg> superposés) ---------- */
+.ligne.a-plan {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-areas: 'plan nom prix' 'plan desc desc' 'plan delai delai';
+  column-gap: 11px;
+  padding-left: 10px;
+}
+.ligne .plan-mini {
+  grid-area: plan; align-self: start; position: relative;
+  width: 64px; height: 48px; margin: 1px 0 0; padding: 0; border: 0; border-radius: 6px;
+  background: #1C4E86; cursor: zoom-in; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  box-shadow: 0 1px 1.5px rgba(16, 32, 58, .35), 0 4px 9px -5px rgba(16, 32, 58, .7);
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+.ligne .plan-mini .plan { width: 100%; height: 100%; border-radius: inherit; }
+@media (hover: hover) { .ligne .plan-mini:active { transform: scale(.95); } }
+.ligne .plan-mini:focus-visible { outline: 2px solid var(--sauge-3); outline-offset: 2px; }
+/* le coin corné : « il y a un plan à déplier » */
+.ligne .plan-mini::after {
+  content: ''; position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; border-radius: 0 0 6px 0; pointer-events: none;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0) 50%, rgba(238, 248, 255, .85) 50%, #CFE6F7 72%, #9CC6E8);
+  box-shadow: -1px -1px 2px rgba(8, 22, 44, .35);
+}
+.ligne.choisi .plan-mini { box-shadow: 0 0 0 1.5px var(--ticket-2), 0 4px 9px -5px rgba(16, 32, 58, .7); }
+
+/* ---------- la feuille du grand plan (#feuille-plan) ---------- */
+.sheet-plan .sheet-titre { margin-bottom: 12px; }
+.fp-plan { margin: 0 0 14px; }
+.fp-plan .plan-grand { border-radius: 10px; box-shadow: 0 14px 28px -18px rgba(12, 28, 56, .95), 0 0 0 1px rgba(12, 28, 56, .12); }
+.fp-legende { list-style: none; counter-reset: fp; margin: 0 0 12px; padding: 0; display: grid; gap: 7px; }
+.fp-legende li { counter-increment: fp; position: relative; padding-left: 29px; font-size: 14px; line-height: 1.35; min-height: 20px; }
+.fp-legende li::before {
+  content: counter(fp); position: absolute; left: 0; top: -1px; width: 20px; height: 20px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1.3px #1C4E86; color: #1C4E86; font: 700 11.5px/20px var(--chiffres, var(--sans)); text-align: center;
+}
+.fp-desc { margin: 0 0 4px; color: var(--encre-2); font-size: 14px; line-height: 1.45; }
+.fp-meta { margin: 0 0 16px; font-size: 13px; font-weight: 600; color: var(--sauge-3); }
+.fp-meta b { font-family: var(--main); font-size: 22px; font-weight: 700; color: var(--encre); margin-right: 2px; }

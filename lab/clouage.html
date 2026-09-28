@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Labo · le clouage</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<link rel="stylesheet" href="../css/cordo.css">
+<style>
+  html, body { margin: 0; background: var(--papier, #F4EBDC); color: var(--encre, #2B2420); font-family: var(--sans); }
+  .col { max-width: 390px; margin: 0 auto; padding: 18px 14px 40px; }
+  h1 { font-family: var(--chiffres); font-weight: 800; font-size: 22px; letter-spacing: .06em; margin: 4px 0 10px; }
+  .note { font-size: 13px; color: var(--encre-2, #5a5048); margin: 0 0 16px; }
+  .ctl { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; justify-content: center; }
+  .ctl button { font: inherit; font-size: 14px; font-weight: 650; padding: 8px 14px; border-radius: 99px; border: 1.5px solid var(--encre, #2B2420); background: transparent; color: inherit; }
+  #bilan { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; white-space: pre-wrap; margin-top: 14px; }
+  /* la planche des têtes : sur un bout de cuir, en gros */
+  .tetes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-radius: 14px; overflow: hidden;
+    background: var(--grain-cuir), radial-gradient(120% 130% at 25% 10%, #8B5E3C, #6B4429 45%, #4A2E1B); }
+  .tetes .case { position: relative; height: 96px; }
+  .tetes .case .clou-tete { transform: scale(2.2); }
+  .tetes .nom { position: absolute; left: 0; right: 0; bottom: 3px; text-align: center; white-space: nowrap; font-family: var(--chiffres); font-size: 9.5px; letter-spacing: .08em; color: rgba(233, 217, 182, .75); }
+</style>
+</head>
+<body>
+<div class="col">
+  <h1>La carte à clous</h1>
+  <p class="note">À chaque réparation, Clément plante un clou. Dix clous = un nettoyage de sneakers ou un cirage offert.</p>
+  <div class="cuir" id="cuir" role="img" aria-label="La carte fidélité en cuir"></div>
+  <div class="ctl" id="ctl">
+    <button type="button" data-n="1">Un clou</button>
+    <button type="button" data-n="3">Trois clous</button>
+    <button type="button" data-n="5">Cinq clous</button>
+    <button type="button" data-n="0">Vider</button>
+  </div>
+  <p class="note" style="text-align:center">C’est Clément qui valide, avec son code, sur votre téléphone.</p>
+  <div id="bilan"></div>
+</div>
+<script src="../js/co-core.js"></script>
+<script src="../js/co-rendu.js"></script>
+<script src="../js/co-mains.js"></script>
+<script src="../js/co-clouage.js"></script>
+<script>
+/* Banc d'essai du clouage (CO.Clouage).
+   (rien)                 la carte ; les boutons plantent 1, 3 ou 5 clous (les mains, le maillet)
+   ?tetes                 douze têtes en gros plan (?carte=<id> : une autre carte)
+   ?fige=<t>&n=<k>        l'instant t d'un clouage de k clous (dès la case ?depart=), figé : pour les captures
+   ?coups=<c>             le nombre de coups par clou (sinon 4 à 7, au hasard du clou)
+   ?reduit                mouvement réduit (le coup de tampon)
+   ?auto=<k>              plante k clous tout seul (dès la case ?deja=) et mesure : images, coût JS, et que rien ne tourne après
+                          (?attente=<ms> : délai entre la préparation et le geste, 1500 par défaut) */
+(function () {
+  'use strict';
+  const q = new URLSearchParams(location.search);
+  if (q.has('reduit')) CO.reduced = true;
+  const $ = (s) => document.querySelector(s);
+  const bilan = $('#bilan');
+  const log = (s) => { bilan.textContent += s + '\n'; };
+  window.addEventListener('error', (e) => log('ERREUR ' + e.message + ' (' + (e.filename || '').split('/').pop() + ':' + e.lineno + ')'));
+  const carteId = q.get('carte') || 'C63-7KQ2';
+  let clous = +(q.get('deja') || 0);
+
+  function carte() {
+    const box = $('#cuir');
+    box.innerHTML = '<div class="cuir-logo" aria-hidden="true"></div><div class="cuir-grille">' +
+      Array.from({ length: 10 }, (_, i) => '<span class="trou-clou">' + (i < clous ? CO.Clouage.tete(i, carteId) : '') + '</span>').join('') +
+      '</div><span class="cuir-num">' + carteId + '</span>';
+  }
+
+  async function planter(n) {
+    n = Math.min(n, 10 - clous);
+    if (n <= 0) return;
+    const cases = [...document.querySelectorAll('#cuir .trou-clou')].slice(clous, clous + n);
+    const index = cases.map((_, k) => clous + k);
+    const t0 = performance.now();
+    await CO.Clouage.enfoncer(cases, { index, carteId, coups: q.has('coups') ? +q.get('coups') : undefined });
+    clous += n;
+    log(n + ' clou' + (n > 1 ? 's' : '') + ' en ' + ((performance.now() - t0) / 1000).toFixed(2) + ' s');
+  }
+
+  async function tetes() {
+    const col = document.querySelector('.col');
+    const g = document.createElement('div');
+    g.className = 'tetes';
+    const ids = [carteId, 'C63-A1B2', 'C63-ZX9P'];
+    for (let i = 0; i < 12; i++) {
+      const id = ids[Math.floor(i / 10) % ids.length], idx = i % 10 + (i >= 10 ? 3 : 0);
+      const m = CO.Clouage.modele(idx, id);
+      const d = document.createElement('div');
+      d.className = 'case';
+      const NF = { bombe: 'bombé', plat: 'plat', pyramide: 'diamant', carre: 'carré', rosette: 'rosette', champignon: 'champignon' };
+      const NM = { laiton: 'laiton', cuivre: 'cuivre', bronze: 'bronze', acier: 'acier', fer: 'fer noirci', dore: 'doré' };
+      d.innerHTML = CO.Clouage.tete(idx, id) + '<span class="nom">' + NF[m.forme] + ' · ' + NM[m.fin] + '</span>';
+      g.appendChild(d);
+    }
+    col.insertBefore(g, $('#cuir'));
+    $('#cuir').style.display = 'none';
+    $('#ctl').style.display = 'none';
+    document.body.dataset.pret = '1';
+  }
+
+  async function fige() {
+    const n = +(q.get('n') || 1), depart = +(q.get('depart') || clous);
+    clous = depart;
+    carte();
+    const cases = [...document.querySelectorAll('#cuir .trou-clou')].slice(depart, depart + n);
+    const t0 = performance.now();
+    const r = await CO.Clouage.figer(cases, { index: cases.map((_, k) => depart + k), carteId, coups: q.has('coups') ? +q.get('coups') : undefined }, +q.get('fige'));
+    log('figé à ' + q.get('fige') + ' s (préparation ' + Math.round(performance.now() - t0) + ' ms) ; clou ' + r.etat.clou.j + ', coups ' + r.etat.clou.coups + '/' + r.etat.clou.n + ', penché ' + (r.etat.clou.penche * 180 / Math.PI).toFixed(0) + '°, enfoncé ' + Math.round(r.etat.clou.prof * 100) + ' % ; plan : ' + r.plan.clous.map((c) => c.n + ' coups à ' + c.impacts.map((x) => x.toFixed(2)).join(',')).join(' | ') + ' ; fin ' + r.plan.fin.toFixed(2) + ' s');
+    const deg = (v) => (v * 180 / Math.PI).toFixed(0) + '°';
+    const mg = r.seance.mainG.e, md = r.seance.mainD.e;
+    log('main gauche : poignet ' + mg.x.toFixed(0) + ',' + mg.y.toFixed(0) + ' rot ' + deg(mg.rot) + ' bras ' + deg(mg.rotB) + ' ; droite : poignet ' + md.x.toFixed(0) + ',' + md.y.toFixed(0) + ' rot ' + deg(md.rot) + ' bras ' + deg(md.rotB));
+    document.body.dataset.pret = '1';
+  }
+
+  async function auto(n) {
+    const tp = performance.now();
+    await CO.Clouage.preparer();
+    const tPret = performance.now() - tp;
+    await new Promise((r) => setTimeout(r, +(q.get('attente') || 1500))); // (la main détendue se calcule en second)
+    const iv = [];
+    let der = 0, fin = false;
+    const longs = [];
+    (function mes(tn) { if (der) { iv.push(tn - der); if (tn - der > 20) longs.push([tn, tn - der]); } der = tn; if (!fin) requestAnimationFrame(mes); })(performance.now());
+    await planter(n);
+    fin = true;
+    iv.sort((a, b) => a - b);
+    const k = iv.length, S = CO.Clouage.stats.dernier;
+    if (S.tampon) {
+      log('mouvement réduit : ' + S.clous + ' tête(s) posée(s) d’un coup de tampon en ' + S.duree.toFixed(2) + ' s ; canvas : ' + (document.querySelector('canvas.clouage') ? 'OUI' : 'aucun') + ' ; têtes posées : ' + document.querySelectorAll('#cuir .clou-tete').length);
+      document.body.dataset.pret = '1';
+      return;
+    }
+    log('préparation (essentiel) ' + Math.round(tPret) + ' ms ; ' + S.clous + ' clous (' + S.coups.join(', ') + ' coups) : prévu ' + S.plan.toFixed(2) + ' s, joué ' + S.duree.toFixed(2) + ' s');
+    log('images ' + k + ' : intervalle médian ' + iv[k >> 1].toFixed(1) + ' ms, 95 % < ' + iv[Math.floor(k * 0.95)].toFixed(1) + ', pire ' + iv[k - 1].toFixed(1) + ' ; > 20 ms : ' + iv.filter((v) => v > 20).length);
+    log("coût JS d'une image : " + (S.ms / S.images).toFixed(2) + ' ms en moyenne, pire ' + S.max.toFixed(1) + ' ms (' + S.images + ' images) ; dpr ' + window.devicePixelRatio);
+    if (longs.length) log('images longues (s depuis le début : ms) : ' + longs.map(([tn, v]) => ((tn - S.t0) / 1000).toFixed(2) + ':' + Math.round(v)).join('  ') + ' ; impacts : ' + S.impacts.map((l) => l.map((x) => x.toFixed(2)).join(',')).join(' | '));
+    // après : plus de canvas, plus rien qui tourne
+    let rafs = 0;
+    const raf0 = window.requestAnimationFrame;
+    window.requestAnimationFrame = (f) => { rafs++; return raf0.call(window, f); };
+    await new Promise((r) => setTimeout(r, 1200));
+    window.requestAnimationFrame = raf0;
+    log('après : canvas ' + (document.querySelector('canvas.clouage') ? 'ENCORE LÀ' : 'retiré') + ' ; rAF demandés en 1,2 s : ' + rafs + ' ; calculs en attente : ' + (CO.Mains ? CO.Mains.calcul.attente : '-') + ' ; têtes posées : ' + document.querySelectorAll('#cuir .clou-tete').length);
+    document.body.dataset.pret = '1';
+  }
+
+  if (q.has('tetes')) { tetes(); return; }
+  carte();
+  if (q.has('fige')) { fige(); return; }
+  if (q.has('auto')) { auto(+q.get('auto') || 1); return; }
+  document.getElementById('ctl').addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const n = +b.dataset.n;
+    if (!n) { clous = 0; carte(); return; }
+    await planter(n);
+  });
+  const t0 = performance.now();
+  CO.Clouage.preparer().then(() => { log('mains et maillet prêts en ' + Math.round(performance.now() - t0) + ' ms'); document.body.dataset.pret = '1'; });
+})();
+</script>
+</body>
+</html>

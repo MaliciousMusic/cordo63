@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Labo · le process</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<style>
+  html, body { margin: 0; background: #17120f; color: #eadfcd; font-family: 'Bricolage Grotesque', system-ui, sans-serif; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  #film { position: relative; width: 100%; aspect-ratio: 390 / 450; background: #1b1511; overflow: hidden; }
+  #planche { position: relative; }
+  #planche canvas { display: block; }
+  .lab { position: absolute; font-size: 11px; line-height: 1.15; color: #f4ecd9; text-shadow: 0 1px 2px #000, 0 0 6px #000; pointer-events: none; }
+  .ctl { padding: 8px 10px 4px; font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .ctl button { font: inherit; font-size: 12px; padding: 5px 9px; border-radius: 99px; border: 1px solid #6e866a; background: #231c17; color: #eadfcd; }
+  .ctl input[type=range] { flex: 1; min-width: 160px; }
+  #etape { font-weight: 700; color: #f2d24b; min-width: 70px; }
+  #bilan { font-size: 12px; padding: 8px 12px 16px; white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="bilan"></div>
+<script src="../js/co-core.js"></script>
+<script src="../js/co-rendu.js"></script>
+<script src="../js/co-outils.js"></script>
+<script src="../js/co-mains.js"></script>
+<script src="../js/co-process.js" onerror="window.__sansProcess = true"></script>
+<script>
+/* Banc d'essai du film « le process » (l'onglet L'atelier).
+   (rien)            le film, en boucle ; une réglette pour se promener dans le temps
+   ?t=<s>            fige l'instant t (s) : pour les captures
+   ?lent             au ralenti (×0,5) · ?vitesse=<k>
+   ?mains            la planche des poses (les deux mains) · ?mains=repos,pince · ?cote=1|-1 · ?ppm= · ?angle=<deg> · ?sansbras
+   ?bench            temps de préparation et coût d'une image
+   ?nocache          sans la mémoire du téléphone (IndexedDB) */
+(function () {
+  'use strict';
+  const q = new URLSearchParams(location.search);
+  const R = CO.R, M = CO.Mains;
+  const app = document.getElementById('app'), bilan = document.getElementById('bilan');
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const log = (s) => { bilan.textContent += s + '\n'; };
+  window.addEventListener('error', (e) => log('ERREUR ' + e.message + ' (' + (e.filename || '').split('/').pop() + ':' + e.lineno + ')'));
+  window.addEventListener('unhandledrejection', (e) => log('ERREUR ' + (e.reason && (e.reason.stack || e.reason.message))));
+
+  /* ---------------- la planche des poses ---------------- */
+  async function planche() {
+    const ppm = q.has('ppm') ? +q.get('ppm') : 2 * dpr;
+    const css = ppm / dpr;
+    const angle = ((+q.get('angle') || 0) * Math.PI) / 180;
+    const poses = q.get('mains') ? q.get('mains').split(',') : M.POSES;
+    const cotes = q.has('cote') ? [+q.get('cote')] : [1, -1];
+    const avecBras = !q.has('sansbras');
+    const t0 = performance.now();
+    const cells = [];
+    for (const cote of cotes) {
+      for (const pose of poses) {
+        const ta = performance.now();
+        const sp = await M.preparer('main', cote, pose, { ppm, angle, sansCoffre: true }, 2);
+        const tb = performance.now();
+        cells.push({ cote, pose, sp, ms: tb - ta });
+      }
+    }
+    const bras = {}, manches = {};
+    if (avecBras) for (const cote of cotes) {
+      const ta = performance.now();
+      bras[cote] = await M.preparer('bras', cote, null, { ppm, angle, sansCoffre: true }, 2);
+      manches[cote] = await M.preparer('manche', cote, null, { ppm, angle, sansCoffre: true }, 2);
+      bras[cote].ms = performance.now() - ta;
+    }
+    // la mise en page : une colonne par pose, une rangée par main (mm)
+    const W = document.documentElement.clientWidth;
+    const cellW = 150, cellH = avecBras ? 480 : 240;
+    const cols = Math.max(1, Math.min(poses.length, Math.floor(W / css / cellW)));
+    const rows = Math.ceil(cells.length / cols);
+    const Wmm = W / css, Hmm = rows * cellH + 10;
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(Wmm * ppm);
+    cv.height = Math.round(Hmm * ppm);
+    cv.style.width = W + 'px';
+    cv.style.height = Hmm * css + 'px';
+    const div = document.createElement('div');
+    div.id = 'planche';
+    div.appendChild(cv);
+    app.appendChild(div);
+    const g = cv.getContext('2d');
+    const bg = await M.calcul.lancer(CO.Outils.fond({ cadre: { bx0: 0, by0: 0, w: cv.width, h: cv.height }, ppm, tapis: { x: Wmm / 2, y: Hmm / 2, angle: 0, W: Wmm + 40, H: Hmm + 40 }, graine: 63 }), 2);
+    g.drawImage(bg.canvas, 0, 0);
+    const places = cells.map((c, i) => ({ c, x: ((i % cols) + 0.5) * cellW + (Wmm - cols * cellW) / 2, y: Math.floor(i / cols) * cellH + 205 }));
+    const poser = (sp, x, y, o) => R.poser(g, sp, x * ppm, y * ppm, o);
+    for (const p of places) {
+      if (avecBras) { poser(bras[p.c.cote], p.x, p.y, { objet: false }); poser(manches[p.c.cote], p.x, p.y, { objet: false, s: ppm / manches[p.c.cote].ppm }); }
+      poser(p.c.sp, p.x, p.y, { objet: false });
+    }
+    for (const p of places) {
+      if (avecBras) { poser(bras[p.c.cote], p.x, p.y, { ombre: false }); poser(manches[p.c.cote], p.x, p.y, { ombre: false, s: ppm / manches[p.c.cote].ppm }); }
+      poser(p.c.sp, p.x, p.y, { ombre: false });
+      const pr = M.prise(p.c.cote, p.c.pose);
+      if (q.has('prise')) { g.fillStyle = '#ff0'; g.beginPath(); g.arc((p.x + pr[0]) * ppm, (p.y + pr[1]) * ppm, 3, 0, 7); g.fill(); }
+    }
+    if (!q.has('brut')) R.photo(g, cv.width, cv.height, { foyer: [0.3, 0.02], force: 0.5, grain: 0.8 });
+    for (const p of places) {
+      const lab = document.createElement('div');
+      lab.className = 'lab';
+      lab.style.left = (p.x - cellW / 2 + 4) * css + 'px';
+      lab.style.top = (p.y - 200) * css + 'px';
+      lab.innerHTML = '<b>' + p.c.pose + '</b> ' + (p.c.cote > 0 ? 'droite' : 'gauche') + '<br>' + Math.round(p.c.sp.t.tout) + ' ms · ' + Math.round(p.c.sp.px / 1000) + 'k px';
+      div.appendChild(lab);
+    }
+    log('planche : ' + cells.length + ' mains à ' + ppm.toFixed(2) + ' px/mm en ' + Math.round(performance.now() - t0) + ' ms' +
+      (avecBras ? ' ; avant-bras ' + cotes.map((c) => Math.round(bras[c].t.tout) + ' ms (' + Math.round(bras[c].px / 1000) + 'k px)').join(', ') : '') +
+      ' ; pas le plus long ' + M.calcul.stats.pasMax.toFixed(1) + ' ms');
+    document.body.dataset.pret = '1';
+  }
+
+  /* ---------------- le film ---------------- */
+  async function film() {
+    if (window.__sansProcess || !CO.Process) { log('co-process.js absent'); document.body.dataset.pret = '1'; return; }
+    const wrap = document.createElement('div');
+    wrap.className = 'wrap';
+    wrap.innerHTML = '<div id="film"></div><div class="ctl"><button id="jp">▶︎ / ❚❚</button><span id="etape">—</span><input id="curseur" type="range" min="0" max="1000" value="0"><span id="temps">0,0 s</span></div>';
+    app.appendChild(wrap);
+    const host = document.getElementById('film');
+    if (q.get('h')) host.style.aspectRatio = 'auto', host.style.height = q.get('h') + 'px';
+    const t0 = performance.now();
+    const fige = q.has('t');
+    const vitesse = q.has('vitesse') ? +q.get('vitesse') : q.has('lent') ? 0.5 : 1;
+    const P = await CO.Process.create(host, { boucle: true, auto: !fige, vitesse, t: fige ? +q.get('t') : 0 });
+    window.P = P;
+    log('prêt en ' + Math.round(performance.now() - t0) + ' ms');
+    const et = document.getElementById('etape'), cur = document.getElementById('curseur'), tps = document.getElementById('temps');
+    P.on('etape', (id) => { et.textContent = id || '—'; });
+    let glisse = false;
+    cur.addEventListener('input', () => { glisse = true; P.aller((cur.value / 1000) * P.duree); });
+    cur.addEventListener('change', () => { glisse = false; });
+    document.getElementById('jp').onclick = () => (P.joue ? P.pause() : P.jouer());
+    (function suivre() {
+      if (!glisse) cur.value = Math.round((P.t / P.duree) * 1000);
+      tps.textContent = P.t.toFixed(1).replace('.', ',') + ' s';
+      requestAnimationFrame(suivre);
+    })();
+    if (fige) {
+      P.aller(+q.get('t'));
+      await P.image();
+      document.body.dataset.pret = '1';
+    }
+    if (q.has('bench')) {
+      const b = await P.mesurer();
+      log(b);
+    }
+  }
+
+  /* ---------------- la planche des objets du film ---------------- */
+  async function objets() {
+    const I = CO.Process._interne;
+    const ppm = q.has('ppm') ? +q.get('ppm') : 2 * dpr;
+    const css = ppm / dpr;
+    const ids = q.get('objets') ? q.get('objets').split(',') : ['basket-sale', 'basket-propre', 'bol', 'pot', 'tampon', 'encreur', 'lacets-neufs', 'marteau-frappe', 'marteau', 'brosse', 'pinceau', 'ticket', 'tickets-pile'];
+    const t0 = performance.now();
+    const sps = [];
+    for (const id of ids) {
+      const angle = id.startsWith('basket') ? -90 : 0;
+      const sp = await I.sprite(id, { ppm, angle, graine: 63, sansCoffre: true, ticket: id === 'ticket' ? { travail: 'nettoyage + collage', prix: '35 €', date: 'jeudi' } : null }, 2);
+      sps.push({ id, sp });
+    }
+    const W = document.documentElement.clientWidth, Wmm = W / css;
+    let x = 8, y = 14, hRow = 0;
+    const places = [];
+    for (const e of sps) {
+      const w = e.sp.w + 12, h = e.sp.h + 26;
+      if (x + w > Wmm - 6 && x > 8) { x = 8; y += hRow; hRow = 0; }
+      places.push({ e, x: x + e.sp.ax + 4, y: y + e.sp.ay + 14 });
+      x += w;
+      hRow = Math.max(hRow, h);
+    }
+    const Hmm = y + hRow + 10;
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(Wmm * ppm); cv.height = Math.round(Hmm * ppm);
+    cv.style.width = W + 'px'; cv.style.height = Hmm * css + 'px';
+    const div = document.createElement('div');
+    div.id = 'planche';
+    div.appendChild(cv);
+    app.appendChild(div);
+    const g = cv.getContext('2d');
+    const bg = await M.calcul.lancer(CO.Outils.fond({ cadre: { bx0: 0, by0: 0, w: cv.width, h: cv.height }, ppm, tapis: { x: Wmm / 2, y: Hmm / 2, angle: 0, W: Wmm + 40, H: Hmm + 40 }, graine: 63 }), 2);
+    g.drawImage(bg.canvas, 0, 0);
+    for (const p of places) R.poser(g, p.e.sp, p.x * ppm, p.y * ppm, { objet: false });
+    for (const p of places) R.poser(g, p.e.sp, p.x * ppm, p.y * ppm, { ombre: false });
+    if (q.has('empreinte')) {
+      const E = I.empreintePrete(ppm);
+      g.drawImage(E.canvas, 20 * ppm, (Hmm - 30) * ppm);
+    }
+    if (!q.has('brut')) R.photo(g, cv.width, cv.height, { foyer: [0.3, 0.02], force: 0.5, grain: 0.8 });
+    for (const p of places) {
+      const lab = document.createElement('div');
+      lab.className = 'lab';
+      lab.style.left = (p.x - p.e.sp.ax) * css + 'px';
+      lab.style.top = (p.y - p.e.sp.ay - 12) * css + 'px';
+      lab.innerHTML = '<b>' + p.e.id + '</b> ' + Math.round(p.e.sp.t.tout) + ' ms';
+      div.appendChild(lab);
+    }
+    log('objets : ' + sps.length + ' en ' + Math.round(performance.now() - t0) + ' ms à ' + ppm + ' px/mm');
+    document.body.dataset.pret = '1';
+  }
+
+  if (q.has('mains')) planche();
+  else if (q.has('objets')) objets();
+  else film();
+})();
+</script>
+</body>
+</html>

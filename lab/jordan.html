@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Labo — l'enseigne Jordan en bois</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<style>
+  /* Les jetons de l'appli (css/cordo.css) : jamais de famille de police en dur */
+  :root {
+    --large: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --sans: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --chiffres: 'Big Shoulders', 'Arial Narrow', 'Roboto Condensed', sans-serif;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #d9ceb8; font-family: var(--sans); }
+  body.nuit { background: #2a3040; }
+  body.nuit #rue svg .jour { filter: brightness(.42) saturate(.8) hue-rotate(-12deg); }
+  /* la scène : 400 × 560 unités comme la façade (1 unité ≈ 1 cm), cadrée comme elle (le bas collé) */
+  #cadre-rue { position: fixed; inset: 0; overflow: hidden; }
+  #rue { position: absolute; left: 0; top: 0; width: 400px; height: 560px; transform-origin: 0 0; }
+  #rue svg { position: absolute; inset: 0; width: 400px; height: 560px; }
+  #hote { position: absolute; left: 22px; top: 146px; width: 70px; height: 112px; }
+  #hud { position: fixed; left: 8px; bottom: 8px; font: 11px/1.35 var(--chiffres); letter-spacing: .02em; color: #1f261d; background: rgba(255, 255, 255, 0.78);
+    padding: 6px 8px; border-radius: 6px; max-width: calc(100vw - 32px); white-space: pre-wrap; display: none; }
+  body.nuit #hud { color: #eee; background: rgba(0, 0, 0, 0.55); }
+  #cartes { position: fixed; inset: 0; overflow: auto; background: #111; display: none; }
+  #cartes canvas { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div id="cadre-rue"><div id="rue">
+  <svg viewBox="0 0 400 560" aria-hidden="true">
+    <defs>
+      <linearGradient id="enduit" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ECE3D0"/><stop offset="1" stop-color="#D8CDB6"/></linearGradient>
+      <linearGradient id="sauge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7C9377"/><stop offset="1" stop-color="#6A8166"/></linearGradient>
+    </defs>
+    <g class="jour">
+      <rect x="-400" y="0" width="1200" height="560" fill="url(#enduit)"/>
+      <g fill="#5E6B58" opacity=".9"><rect x="40" y="18" width="46" height="72"/><rect x="170" y="18" width="46" height="72"/><rect x="300" y="18" width="46" height="72"/></g>
+      <rect x="-400" y="138" width="1200" height="8" fill="#CFC4AE"/>
+      <rect x="96" y="146" width="284" height="98" fill="url(#sauge)"/>
+      <text x="238" y="206" text-anchor="middle" style="font-family: var(--large); font-weight: 700; font-stretch: 125%; letter-spacing: 3px; font-size: 26px;" fill="#B08A4E">CORDONNERIE</text>
+      <rect x="0" y="244" width="400" height="234" fill="#6E866A"/>
+      <g fill="#2E3830"><rect x="26" y="250" width="156" height="144"/><rect x="210" y="250" width="63" height="144"/></g>
+      <g fill="#5C5751"><rect x="0" y="242" width="24" height="236"/><rect x="184" y="242" width="24" height="236"/><rect x="354" y="242" width="24" height="236"/></g>
+      <rect x="-400" y="478" width="1200" height="82" fill="#A9A49B"/>
+    </g>
+    <!-- la platine murale de l'enseigne (dessinée par la façade dans l'appli) -->
+    <g>
+      <rect x="83.8" y="160.6" width="13.6" height="20" rx="1" fill="#000" opacity=".25"/>
+      <rect x="83.2" y="159.8" width="13.6" height="20" rx="1" fill="#34373A"/>
+      <rect x="83.2" y="159.8" width="13.6" height="1.1" rx=".6" fill="#6A6F73"/>
+      <g fill="#1C1E20"><circle cx="86.1" cy="163.4" r="1.35"/><circle cx="93.9" cy="163.4" r="1.35"/><circle cx="86.1" cy="176.6" r="1.35"/><circle cx="93.9" cy="176.6" r="1.35"/></g>
+      <rect x="86.8" y="166.8" width="6.4" height="6.4" rx=".5" fill="#26282B"/>
+    </g>
+  </svg>
+  <div id="hote"></div>
+</div></div>
+<div id="hud"></div>
+<div id="cartes"></div>
+<script src="../js/co-core.js"></script>
+<script src="../js/co-jordan.js"></script>
+<script>
+  (function () {
+    'use strict';
+    /* ?mode=enseigne|seule  ?pose=pointe|posee  ?nuit  ?fige  ?angle=<deg> (angle de la chaussure)  ?elev=<deg>
+       ?maps  ?fil  ?stats  ?grand (gros plan sur l'enseigne)  ?qualite=haute|basse  ?sansworker  ?cartespage  ?sansgl (image de repli 2D) */
+    const q = new URLSearchParams(location.search), a = (k) => q.has(k) && q.get(k) !== '0';
+    const opts = { mode: q.get('mode') || 'enseigne', pose: q.get('pose') || 'pointe', nuit: a('nuit'), interactive: true, fige: a('fige'), fil: a('fil') };
+    if (q.has('angle')) opts.yaw = (+q.get('angle') * Math.PI) / 180;
+    if (q.has('elev')) opts.elevation = (+q.get('elev') * Math.PI) / 180;
+    if (q.has('qualite')) opts.qualite = q.get('qualite'); // haute | basse (sinon selon la taille)
+    if (a('sansworker')) opts.worker = false;
+    if (a('cartespage')) opts.cartesPage = true;
+    if (a('sansgl')) { const gc = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (t, o) { return /webgl/.test(t) ? null : gc.call(this, t, o); }; }
+    if (opts.nuit) document.body.classList.add('nuit');
+    const rue = document.getElementById('rue'), hote = document.getElementById('hote'), hud = document.getElementById('hud');
+    // cadrage : comme la façade (toute la hauteur, le bas collé) ; « grand » : la caméra s'approche de l'enseigne
+    // (chaussure seule : l'hôte occupe tout l'écran)
+    function cadre() {
+      const W = innerWidth, H = innerHeight;
+      if (opts.mode === 'seule') { rue.parentNode.style.display = 'none'; Object.assign(hote.style, { position: 'fixed', left: 0, top: 0, width: W + 'px', height: H + 'px' }); return; }
+      let s, tx, ty;
+      if (a('grand')) { s = Math.min((H * 0.8) / 112, (W * 0.8) / 70); tx = W / 2 - (22 + 35) * s; ty = H / 2 - (146 + 56) * s; }
+      else { s = Math.min(W / 400, H / 560); tx = W / 2 - 200 * s; ty = H - 560 * s; }
+      rue.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+      // l'hôte vit à l'échelle de l'écran (pas de transformation CSS sur le canvas : il reste net)
+      Object.assign(hote.style, { position: 'fixed', left: tx + 22 * s + 'px', top: ty + 146 * s + 'px', width: 70 * s + 'px', height: 112 * s + 'px' });
+    }
+    document.body.appendChild(hote);
+    cadre();
+    addEventListener('resize', cadre);
+    const t0 = performance.now();
+    window.JORDAN_PRET = false;
+    CO.emit('view', 'accueil');
+    CO.Jordan.create(hote, opts).then((J) => {
+      window.J = J;
+      window.JORDAN_CREE = performance.now();
+      const fin = () => { window.JORDAN_PRET = true; };
+      if (a('fige')) fin(); else J.entree().then(fin);
+      window.__yaw = [];
+      J.on('tourne', (y) => { window.__yaw.push(y); if (window.__yaw.length > 50) window.__yaw.shift(); });
+      J.on('toc', () => { if (a('stats')) hud.textContent += '\ntoc !'; });
+      if (a('stats')) {
+        hud.style.display = 'block';
+        const s = J.stats, u = s.usine || {};
+        const maj = () => {
+          hud.textContent = 'prêt en ' + s.pret + ' ms — ' + u.ou + ' : géométrie ' + u.base + ' ms, cartes ' + u.cartes + ' ms, relief ' + u.relief + ' ms\n' +
+            (s.sommets || 0) + ' sommets · une image : ' + (s.image || 0).toFixed(2) + ' ms (CPU) · ' + (s.images || 0) + ' images · yaw ' + J.yaw.toFixed(2);
+        };
+        maj();
+        setInterval(maj, 500);
+      }
+      if (a('maps')) {
+        // les cartes de sculpture, telles que dessinées (profil extérieur, intérieur, dessus)
+        const box = document.getElementById('cartes'), C = J.cartes;
+        box.style.display = 'block';
+        const cv = document.createElement('canvas');
+        cv.width = 1024; cv.height = 1536;
+        const g = cv.getContext('2d'), img = g.createImageData(1024, 1536);
+        if (C) {
+          [C.lat, C.med, C.dessus].forEach((A, k) => {
+            for (let i = 0; i < A.length; i++) { const o = (k * A.length + i) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = A[i]; img.data[o + 3] = 255; }
+          });
+          g.putImageData(img, 0, 0);
+        }
+        box.appendChild(cv);
+      }
+    });
+  })();
+</script>
+</body>
+</html>

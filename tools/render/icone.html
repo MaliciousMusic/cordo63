@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Icône Cordo 63</title>
+<link rel="stylesheet" href="../../css/fonts.css">
+<style>
+  html, body { margin: 0; background: transparent; }
+  /* l'icône d'appli : comme leur avatar Instagram, le logo vert sauge sur un fond crème */
+  #ic { position: relative; width: 512px; height: 512px; background: #FFF2E2; display: grid; place-items: center; overflow: hidden; }
+  #ic::before { content: ''; position: absolute; inset: 0; opacity: .5;
+    background: linear-gradient(rgba(138,146,123,.16) 1px, transparent 1px) 0 0 / 100% 32px, linear-gradient(90deg, rgba(138,146,123,.16) 1px, transparent 1px) 0 0 / 32px 100%;
+    -webkit-mask-image: radial-gradient(60% 60% at 50% 50%, transparent 35%, #000 90%); mask-image: radial-gradient(60% 60% at 50% 50%, transparent 35%, #000 90%); }
+  .bloc { position: relative; width: calc(430px * var(--k, 1)); color: #8A927B; }
+  .bloc svg { width: 100%; height: auto; overflow: visible; }
+</style>
+</head>
+<body>
+<div id="ic"><div class="bloc" id="bloc"></div></div>
+<script src="../../js/co-core.js"></script>
+<script src="../../js/co-brand.js"></script>
+<script>
+  const k = +new URLSearchParams(location.search).get('k') || 1;
+  document.getElementById('bloc').style.setProperty('--k', k);
+  document.getElementById('bloc').appendChild(CO.logo({ phrase: true, couleur: 'currentColor', couleurPhrase: '#6F7766' }));
+</script>
+</body>
+</html>

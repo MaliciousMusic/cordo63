@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Labo · l'enseigne-soulier et les lacets</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<link rel="stylesheet" href="../css/cordo.css">
+<link rel="stylesheet" href="../css/co-accueil.css">
+<style>
+  /* Banc d'essai de l'accueil : la vraie structure de l'appli (main, vues, défilement), la devanture
+     si js/co-facade.js se charge, le logo, l'enseigne-soulier en tête, les lacets sous le logo.
+     Paramètres : ?soir ?jour ?ouvert ?etat=ouvert|pause|ferme ?ouvrir ?ralenti=4 ?sansfacade ?reduit ?sanslabo */
+  .labo {
+    position: fixed; right: 8px; bottom: calc(var(--tab-h) + var(--safe-b) + 8px); z-index: 90; max-width: calc(100vw - 16px);
+    display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; font: 600 11.5px/1 var(--sans);
+  }
+  .labo button {
+    padding: 7px 9px; border: 0; border-radius: 99px; background: rgba(43, 36, 32, .86); color: #FFF2E2; font: inherit; cursor: pointer;
+    box-shadow: 0 4px 10px -4px rgba(0, 0, 0, .5);
+  }
+  .labo button:focus { outline: none; }
+  .labo button:focus-visible { outline: 2px solid #F2D24B; outline-offset: 2px; }
+  .labo.replie button:not(.labo-cle) { display: none; }
+  .labo[hidden] { display: none; }
+  .vue-factice { display: grid; place-items: center; height: 100%; padding: 30px; text-align: center; background: var(--papier); }
+  .vue-factice h2 { font-family: var(--chiffres); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--sauge-3); margin: 0 0 12px; }
+  .vue-factice button { font: 600 14px/1 var(--sans); padding: 12px 18px; border-radius: 99px; border: 0; background: var(--encre); color: var(--creme); cursor: pointer; }
+  .remplissage { margin: 26px 0 0; color: var(--encre-3); font-size: 13px; text-align: center; }
+  .tab-labo { flex: 1; display: grid; place-items: center; padding-top: 22px; color: rgba(233, 217, 182, .72); font-size: 10.5px; font-weight: 600; }
+</style>
+</head>
+<body>
+<main id="main">
+  <section class="view vue is-active" id="accueil" data-view="accueil" aria-labelledby="accueil-titre">
+    <div class="panneau-host" id="panneau-host"><p class="panneau-repli">Du mardi au samedi · 10h–13h30 · 14h30–19h</p></div>
+    <div class="view-scroll">
+      <div class="scene" id="scene"><div class="facade-host" id="facade-host"></div></div>
+      <div class="quadrillage-fondu" aria-hidden="true"></div>
+      <div class="contenu">
+        <h1 id="accueil-titre" class="h-accueil"><span class="visuellement-cache">Cordo 63, cordonnier à Clermont-Ferrand</span><span class="h1-logo" id="accueil-logo" aria-hidden="true"></span><span class="h1-sous">cordonnerie • maroquinerie • clés</span></h1>
+        <nav class="lacets" id="lacets" aria-label="Accès rapides">
+          <a class="lacet-repli" href="#deposer">Déposer une paire</a>
+          <a class="lacet-repli" href="#services">Les tarifs</a>
+          <a class="lacet-repli" href="https://www.google.com/maps/dir/?api=1&amp;destination=Cordo%2063%2C%206%20rue%20Verdier-Latour%2C%2063000%20Clermont-Ferrand" target="_blank" rel="noopener">Itinéraire</a>
+          <a class="lacet-repli" href="tel:+33473246690">Appeler Clément</a>
+          <a class="lacet-repli" href="https://www.instagram.com/cordo.63/" target="_blank" rel="noopener">Instagram</a>
+        </nav>
+        <p class="intro">Talons, semelles, sneakers, sacs et clés, place du Mazet. Clément travaille derrière la vitrine : <strong>déposez votre paire, suivez-la ici.</strong></p>
+        <p class="remplissage">(la suite de l'accueil : le ticket en cours, les étiquettes kraft…)</p>
+        <div style="height: 520px"></div>
+      </div>
+    </div>
+  </section>
+  <section class="view" id="deposer" data-view="deposer"><div class="vue-factice"><div><h2>Déposer une paire</h2><p>(la vue Déposer)</p><button type="button" data-retour>Revenir à l'accueil</button></div></div></section>
+  <section class="view" id="services" data-view="services"><div class="vue-factice"><div><h2>L'établi · les tarifs</h2><p>(la vue L'établi)</p><button type="button" data-retour>Revenir à l'accueil</button></div></div></section>
+</main>
+<nav class="tabbar" aria-hidden="true"><span class="tab-labo">Accueil</span><span class="tab-labo">L’établi</span><span class="tab-labo">Déposer</span><span class="tab-labo">Mes tickets</span><span class="tab-labo">L’atelier</span></nav>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="labo" id="labo" data-pn-garde>
+  <button type="button" data-l="ouvrir">Déplier / replier</button>
+  <button type="button" data-l="etat">État</button>
+  <button type="button" data-l="soir">Jour / soir</button>
+  <button type="button" data-l="secouer">Secouer</button>
+  <button type="button" data-l="remettre">Remettre les lacets</button>
+  <button type="button" class="labo-cle" data-l="replier">Labo</button>
+</div>
+
+<script src="../js/co-core.js"></script>
+<script src="../js/co-data.js"></script>
+<script src="../js/co-brand.js"></script>
+<script src="../js/co-facade.js"></script>
+<script src="../js/co-panneau.js"></script>
+<script src="../js/co-lacets.js"></script>
+<script>
+  (async () => {
+    const q = new URLSearchParams(location.search);
+    const $ = (s) => document.querySelector(s);
+    if (q.has('reduit')) CO.reduced = true;
+    if (q.has('ralenti')) CO.ralenti = +q.get('ralenti') || 4;
+
+    // ?etat=ouvert|pause|ferme : un statut forcé, pour voir chaque enseigne
+    const statutVrai = CO.statut;
+    const ETATS = {
+      ouvert: { ouvert: true, jusqua: 19 * 60, texte: 'Ouvert · jusqu’à 19h', court: 'Ouvert' },
+      pause: { ouvert: false, pause: true, prochain: { dansJours: 0, heure: 14.5 * 60 }, texte: 'Pause déjeuner · réouvre à 14h30', court: 'Pause' },
+      ferme: { ouvert: false, prochain: { dansJours: 2, jour: 2, heure: 600 }, texte: 'Fermé · ouvre mardi à 10h', court: 'Fermé' },
+    };
+    let force = q.get('etat');
+    CO.statut = (d) => (force && ETATS[force]) || statutVrai(d);
+
+    // une navigation d'essai entre l'accueil et deux vues factices (les lacets s'y rendent, puis reviennent)
+    const vues = ['accueil', 'services', 'deposer'];
+    CO.view = 'accueil';
+    CO.go = (v) => {
+      if (!vues.includes(v)) return;
+      document.querySelectorAll('#main > .view').forEach((el) => {
+        const on = el.dataset.view === v;
+        el.classList.toggle('vue', on || el.classList.contains('vue'));
+        el.classList.toggle('is-active', on);
+        el.classList.toggle('is-left', !on && vues.indexOf(el.dataset.view) < vues.indexOf(v));
+        el.setAttribute('aria-hidden', String(!on));
+        if ('inert' in el) el.inert = !on;
+      });
+      CO.view = v;
+      CO.emit('view', v);
+    };
+    document.querySelectorAll('[data-retour]').forEach((b) => b.addEventListener('click', () => CO.go('accueil')));
+    CO.toast = (m, ms = 2400) => { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(CO._tt); CO._tt = setTimeout(() => t.classList.remove('on'), ms); };
+    CO.emit('view', 'accueil');
+
+    // le logo
+    const lg = $('#accueil-logo');
+    if (CO.logo) lg.appendChild(CO.logo({ couleur: 'currentColor' }));
+
+    // la devanture (ou sa silhouette peinte si le module manque)
+    const hf = $('#facade-host');
+    let facade = null;
+    if (!q.has('sansfacade') && CO.Facade && CO.Facade.create) {
+      try {
+        facade = await CO.Facade.create(hf, {});
+        if (facade.setStatut) facade.setStatut(CO.statut());
+        if (facade.setNuit) facade.setNuit(q.has('soir'));
+        if (facade.idle) facade.idle(q.has('fige'));
+      } catch (e) { console.warn('devanture', e); facade = null; }
+    }
+    if (!facade) hf.style.background = 'linear-gradient(180deg, #D8CFBD 0 36%, #6E866A 36% 44%, #2F2A26 44% 86%, #9A9A96 86%)';
+
+    // l'enseigne-soulier
+    const p = CO.Panneau.create($('#panneau-host'));
+    window.P = p;
+    // les lacets (comme dans js/co-app.js)
+    const S = CO.SHOP;
+    const l = CO.Lacets && CO.Lacets.create($('#lacets'), [
+      { label: 'Déposer une paire', couleur: '#F2D24B', action: () => CO.go('deposer') },
+      { label: 'Les tarifs', couleur: '#8A927B', action: () => CO.go('services') },
+      { label: 'Itinéraire', couleur: '#E03A2E', href: S.itineraire, externe: true },
+      { label: 'Appeler Clément', couleur: '#F4EEE2', href: 'tel:' + S.telIntl },
+      { label: 'Instagram', couleur: '#3A2A20', href: S.instagram, externe: true },
+    ]);
+    window.L = l;
+    if (q.has('ouvrir')) setTimeout(() => p.ouvrir(), 300);
+
+    // le tiroir du labo
+    let nuit = q.has('soir'), iEtat = 0;
+    const ordre = ['ouvert', 'pause', 'ferme'];
+    const actions = {
+      ouvrir: () => p.basculer(),
+      etat: () => { force = ordre[iEtat++ % 3]; p.maj(); CO.toast('État : ' + force); },
+      soir: () => { nuit = !nuit; p.nuit(nuit); if (facade && facade.setNuit) facade.setNuit(nuit); },
+      secouer: () => p.secouer(1),
+      remettre: () => l && l.remettre(),
+      replier: () => $('#labo').classList.toggle('replie'),
+    };
+    document.querySelectorAll('[data-l]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); actions[b.dataset.l](); }));
+    $('#labo').addEventListener('pointerdown', (e) => e.stopPropagation());
+    if (q.has('sanslabo')) $('#labo').hidden = true;
+    window.LAB_PRET = true;
+  })();
+</script>
+</body>
+</html>

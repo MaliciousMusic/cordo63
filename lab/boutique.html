@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Labo · la boutique de Cordo 63</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<link rel="stylesheet" href="../css/cordo.css">
+<style>
+  /* Banc d'essai de la boutique (js/co-boutique.js) :
+     ?w=320&h=623 (la taille de la scène) · ?soir · ?reduit · ?activite=marteau · ?fige · ?graine=63
+     ?portrait (Clément seul, en grand, avec ses réglages) · ?plein (la scène sur toute la fenêtre)
+     ?vitesse=4 (le temps accéléré) · ?banc (les scripts seuls, pour les mesures) */
+  html, body { height: auto; overflow: auto; background: #120D0A; color: #EFE6D8; }
+  body { font-family: var(--sans); font-size: 13px; }
+  .page { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; padding: 14px; }
+  .tel { position: relative; background: #000; border-radius: 26px; padding: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+  .ecran { position: relative; overflow: hidden; border-radius: 16px; background: #221A15; }
+  .barre { height: 70px; background: #3E2819; display: flex; align-items: center; justify-content: center; color: #E9D9B6; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+  .ctl { width: 300px; display: flex; flex-direction: column; gap: 10px; }
+  .ctl fieldset { border: 1px solid #4A3A2E; border-radius: 10px; padding: 8px 10px 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .ctl legend { padding: 0 6px; color: #C9B08A; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+  .ctl button, .ctl select { font: inherit; padding: 6px 10px; border-radius: 99px; border: 1px solid #6E866A; background: #221A15; color: #EFE6D8; cursor: pointer; }
+  .ctl button:hover { background: #2E241C; }
+  .ctl button.on { background: #6E866A; color: #111; }
+  .journal { font: 11px/1.45 ui-monospace, Consolas, monospace; color: #B8A88E; white-space: pre-wrap; max-height: 180px; overflow: auto; background: #1A1410; border-radius: 8px; padding: 8px; }
+  .perf { font: 12px ui-monospace, Consolas, monospace; color: #9FD39A; }
+  .bulle-test { position: absolute; left: 10px; right: 10px; bottom: 12px; background: #FFF2E2; color: #2B2420; border-radius: 14px; padding: 12px 14px; font-family: var(--main); font-size: 14px; box-shadow: 0 8px 20px rgba(0,0,0,.5); display: none; z-index: 9; }
+  .bulle-test::before { content: ''; position: absolute; top: -12px; left: var(--qx, 50%); transform: translateX(-50%); border: 7px solid transparent; border-bottom: 12px solid #FFF2E2; border-top: 0; }
+  body.plein .page { padding: 0; }
+  body.plein .tel { padding: 0; border-radius: 0; box-shadow: none; }
+  body.plein .ecran { border-radius: 0; }
+  body.plein .ctl, body.plein .barre { display: none; }
+  #portrait { display: block; margin: 0 auto; background: #5A4B3D; }
+  .reglages { max-width: 520px; margin: 10px auto; display: grid; grid-template-columns: 110px 1fr 44px; gap: 4px 8px; align-items: center; padding: 0 10px; }
+  .reglages input { width: 100%; }
+</style>
+</head>
+<body>
+<script src="../js/co-core.js"></script>
+<script src="../js/co-data.js"></script>
+<script src="../js/co-brand.js"></script>
+<script>
+  // (avant la scène) : le mouvement réduit se simule par l'adresse
+  if (new URLSearchParams(location.search).has('reduit')) CO.reduced = true;
+</script>
+<script src="../js/co-clement.js"></script>
+<script src="../js/co-boutique-decor.js"></script>
+<script src="../js/co-boutique.js"></script>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.has('banc')) return; // (les scripts seuls : pour les mesures)
+  if (q.has('portrait')) return portrait();
+  if (q.has('plein')) document.body.classList.add('plein');
+
+  const W = +(q.get('w') || (q.has('plein') ? innerWidth : 320)), H = +(q.get('h') || (q.has('plein') ? innerHeight : 623));
+  document.body.insertAdjacentHTML('beforeend', `
+  <div class="page">
+    <div class="tel"><div class="ecran" id="ecran" style="width:${W}px;height:${H}px"><div id="host" style="position:absolute;inset:0"></div><div class="bulle-test" id="bulle">Salut ! Moi c’est Clément. J’ai les mains dans la colle, mais les oreilles libres.</div></div><div class="barre" style="width:${W}px">la barre des onglets (70 px)</div></div>
+    <div class="ctl">
+      <fieldset><legend>Activité</legend><select id="act"><option value="">au hasard</option></select><button id="b-faire">Faire</button></fieldset>
+      <fieldset><legend>Scène</legend><button id="b-nuit">Jour / soir</button><button id="b-pause">Pause</button><button id="b-son">Son</button><button id="b-reduit">Mouvement réduit</button></fieldset>
+      <fieldset><legend>Caméra</legend><button id="b-entree">Entrée</button><button id="b-sortie">Sortie</button><button id="b-etabli">Zoom établi</button><button id="b-dezoom">Dézoom</button></fieldset>
+      <fieldset><legend>Clément</legend><button id="b-tap">Toucher Clément</button><button id="b-parle">Parler</button><button id="b-reprendre">Reprendre</button></fieldset>
+      <fieldset><legend>Taille</legend><button data-t="320x623">320×693</button><button data-t="390x774">390×844</button><button data-t="480x760">bureau 480</button></fieldset>
+      <div class="perf" id="perf">—</div>
+      <div class="journal" id="journal"></div>
+    </div>
+  </div>`);
+  const $ = (s) => document.querySelector(s);
+  const journal = (t) => { const j = $('#journal'); j.textContent = (new Date().toLocaleTimeString() + ' ' + t + '\n' + j.textContent).slice(0, 3000); };
+  let nuit = q.has('soir') || q.has('nuit');
+  (async () => {
+    const t0 = performance.now();
+    const s = await CO.Boutique.create($('#host'), { nuit, graine: +(q.get('graine') || 63), vitesse: +(q.get('vitesse') || 1) });
+    journal('créée en ' + Math.round(performance.now() - t0) + ' ms');
+    window.S = s;
+    s.activites.forEach((a) => $('#act').insertAdjacentHTML('beforeend', `<option>${a}</option>`));
+    s.on('clement', () => journal('clement (toucher)'));
+    s.on('cible', (id) => journal('cible : ' + id));
+    s.on('activite', (id) => journal('activité : ' + id));
+    if (q.get('activite')) s.faire(q.get('activite'));
+    if (!q.has('fige')) { s.jouer(); if (!q.has('sansentree')) s.entree({ ms: 1100 }); }
+    $('#b-faire').onclick = () => { const v = $('#act').value; if (v) s.faire(v); };
+    $('#b-nuit').onclick = () => { nuit = !nuit; s.setNuit(nuit); };
+    let p = false;
+    $('#b-pause').onclick = (e) => { p = !p; p ? s.pause() : s.reprise(); e.target.classList.toggle('on', p); };
+    $('#b-son').onclick = (e) => { CO.sfx.on = !CO.sfx.on; e.target.classList.toggle('on', CO.sfx.on); };
+    $('#b-son').classList.toggle('on', CO.sfx.on);
+    $('#b-reduit').onclick = () => { const u = new URL(location.href); u.searchParams.has('reduit') ? u.searchParams.delete('reduit') : u.searchParams.set('reduit', ''); location.href = u; };
+    $('#b-entree').onclick = () => s.entree({ ms: 1100 });
+    $('#b-sortie').onclick = () => s.sortie({ ms: 650 });
+    $('#b-etabli').onclick = () => s.zoomEtabli();
+    $('#b-dezoom').onclick = () => s.dezoom();
+    let parle = false, bulleT = 0;
+    const bulle = $('#bulle');
+    const suivre = () => { if (bulle.style.display !== 'block') return; const t = s.clement.tete(), r = bulle.getBoundingClientRect(); bulle.style.setProperty('--qx', Math.max(10, Math.min(90, (t.x - r.left) / r.width * 100)) + '%'); requestAnimationFrame(suivre); };
+    const dialogue = async () => {
+      await Promise.race([s.clement.regarder(), CO.wait(1600)]);
+      bulle.style.display = 'block'; suivre();
+      s.clement.parler(true);
+      clearTimeout(bulleT);
+      bulleT = setTimeout(() => s.clement.parler(false), 2600);
+    };
+    s.on('clement', dialogue);
+    $('#b-tap').onclick = dialogue;
+    $('#b-parle').onclick = () => { parle = !parle; s.clement.parler(parle); };
+    $('#b-reprendre').onclick = () => { bulle.style.display = 'none'; s.clement.parler(false); s.clement.reprendre(); };
+    document.querySelectorAll('[data-t]').forEach((b) => { b.onclick = () => { const [w, h] = b.dataset.t.split('x'); const u = new URL(location.href); u.searchParams.set('w', w); u.searchParams.set('h', h); location.href = u; }; });
+    // la cadence : le temps d'une image (moyenne sur 1 s)
+    let tp = performance.now(), i0 = s.etat().images;
+    setInterval(() => {
+      const e = s.etat(), now = performance.now();
+      $('#perf').textContent = `scène ${((e.images - i0) * 1000 / (now - tp)).toFixed(0)} i/s · ${e.cadence} ms/image · ${e.activite || '—'} · x ${e.x.toFixed(0)}`;
+      tp = now; i0 = e.images;
+    }, 1000);
+  })();
+
+  function portrait() {
+    document.body.insertAdjacentHTML('beforeend', '<canvas id="portrait" width="800" height="1000"></canvas><div class="reglages" id="ctl"></div>');
+    const cv = document.getElementById('portrait');
+    const W = +(q.get('w') || 800), H = +(q.get('h') || 1000);
+    cv.width = W; cv.height = H;
+    cv.style.width = (W / (window.devicePixelRatio || 1)) + 'px';
+    const ctx = cv.getContext('2d');
+    const c = CO.Clement.create({ x: 0 });
+    window.C = c;
+    const S = c.etat;
+    const P = {
+      zoom: +(q.get('zoom') || 5), cadre: q.get('cadre') || 'buste',
+      yaw: +(q.get('yaw') || 0), turn: +(q.get('turn') || 0), pitch: +(q.get('pitch') || 0.05), lean: +(q.get('lean') || 0),
+      bouche: +(q.get('bouche') || 0), sourire: +(q.get('sourire') || 0), sourcils: +(q.get('sourcils') || 0),
+      gx: 0, gy: 0, marche: +(q.get('marche') || 0),
+    };
+    const ctl = document.getElementById('ctl');
+    [['zoom', 1, 16, 0.1], ['yaw', -1.6, 1.6, 0.01], ['turn', -1.2, 1.2, 0.01], ['pitch', -0.5, 0.7, 0.01], ['lean', -0.3, 0.6, 0.01], ['bouche', 0, 1, 0.01], ['sourire', 0, 1, 0.01], ['sourcils', -1, 1, 0.01], ['gx', -1, 1, 0.01], ['gy', -1, 1, 0.01], ['marche', 0, 1, 0.01]].forEach(([k, a, b, st]) => {
+      const l = document.createElement('label'); l.textContent = k;
+      const i = document.createElement('input'); i.type = 'range'; i.min = a; i.max = b; i.step = st; i.value = P[k];
+      const v = document.createElement('span'); v.textContent = P[k];
+      i.oninput = () => { P[k] = +i.value; v.textContent = i.value; };
+      ctl.append(l, i, v);
+    });
+    let t0 = performance.now();
+    function frame(now) {
+      const dt = Math.min(50, now - t0); t0 = now;
+      S.yaw = P.yaw; S.tete.turn = P.turn; S.tete.pitch = P.pitch; S.lean = P.lean;
+      S.bouche = P.bouche; S.sourire = P.sourire; S.sourcils = P.sourcils; S.regard = [P.gx, P.gy];
+      S.marche = P.marche; if (P.marche) { S.marchePhase += dt / 1000 * 0.9; }
+      if (!q.has('fige')) c.maj(dt);
+      const rd = c.repos('D'), rg = c.repos('G');
+      S.mainD.x = rd[0]; S.mainD.y = rd[1];
+      S.mainG.x = rg[0]; S.mainG.y = rg[1];
+      if (q.has('mains')) { S.mainD.x = -12; S.mainD.y = -118; S.mainD.pose = 'poing'; S.mainG.x = 14; S.mainG.y = -112; S.mainG.pose = 'pince'; }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#6B5A48'; ctx.fillRect(0, 0, W, H);
+      const k = P.zoom;
+      const cy = P.cadre === 'tete' ? -168 : P.cadre === 'pied' ? -95 : -140;
+      ctx.setTransform(k, 0, 0, k, W / 2, H / 2 - cy * k);
+      c.dessiner(ctx, 'tout');
+      if (!q.has('fige')) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+})();
+</script>
+</body>
+</html>

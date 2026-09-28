@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Labo · les plans</title>
+<link rel="stylesheet" href="../css/fonts.css">
+<link rel="stylesheet" href="../css/cordo.css">
+<link rel="stylesheet" href="../css/co-plans.css">
+<style>
+  /* le labo : la page défile (cordo.css fige le corps pour l'appli) */
+  html, body { height: auto; overflow: auto; }
+  body { overscroll-behavior: auto; }
+  .lab-barre {
+    position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 8px 12px; background: rgba(244, 235, 220, .94); box-shadow: 0 1px 0 rgba(43, 36, 32, .12); font-size: 12.5px;
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  }
+  .lab-barre b { font-family: var(--large); font-stretch: 125%; font-weight: 400; text-transform: uppercase; letter-spacing: .12em; font-size: 12px; margin-right: auto; }
+  .lab-barre button, .lab-barre select { font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 99px; border: 1.2px solid rgba(43, 36, 32, .35); background: transparent; color: var(--encre); cursor: pointer; }
+  .lab-barre button[aria-pressed="true"] { background: var(--encre); color: var(--creme); border-color: var(--encre); }
+  .lab-titre { max-width: 600px; margin: 22px auto 6px; padding: 0 16px; font-family: var(--large); font-stretch: 125%; text-transform: uppercase; letter-spacing: .12em; font-size: 13px; color: var(--sauge-3); }
+  .lab-note { max-width: 600px; margin: 0 auto 10px; padding: 0 16px; font-size: 13px; color: var(--encre-2); }
+  /* la grille comme dans l'appli, à 320 px (la plus étroite) */
+  .cadre-320 { width: 320px; max-width: 100%; margin: 0 auto; background: var(--papier) var(--grain); box-shadow: 0 0 0 1px rgba(43, 36, 32, .08); }
+  /* la galerie des grands plans */
+  .galerie { max-width: 1100px; margin: 0 auto; padding: 0 12px 60px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px 14px; }
+  .galerie figure { margin: 0; }
+  .galerie .plan-grand { border-radius: 8px; box-shadow: 0 10px 24px -14px rgba(20, 30, 50, .8); }
+  .galerie figcaption { font-size: 12.5px; color: var(--encre-2); margin-top: 6px; line-height: 1.35; }
+  .galerie figcaption b { color: var(--encre); }
+  /* la planche de contrôle des vignettes */
+  .planche { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 8px; padding: 12px; background: var(--papier); }
+  .planche div { font-size: 9.5px; line-height: 1.15; color: var(--encre-2); }
+  .planche .plan-mini { margin-bottom: 3px; border-radius: 5px; }
+  body.seul .galerie { grid-template-columns: 1fr; max-width: 700px; }
+  body.capture .lab-barre, body.capture .lab-note { display: none; }
+</style>
+</head>
+<body>
+<div class="lab-barre">
+  <b>Labo · plans</b>
+  <button type="button" id="b-pause" aria-pressed="false">Pause</button>
+  <button type="button" id="b-fixe" aria-pressed="false">Sans animation</button>
+  <select id="b-vitesse" aria-label="Vitesse"><option value="1">× 1</option><option value="0.5">× 0,5</option><option value="0.25">× 0,25</option></select>
+</div>
+<div id="app"></div>
+
+<script src="../js/co-core.js"></script>
+<script src="../js/co-data.js"></script>
+<script src="../js/co-ticket.js"></script>
+<script src="../js/co-plans.js"></script>
+<script>
+/* Banc d'essai des plans animés (js/co-plans.js, css/co-plans.css).
+   (rien)          la grille des services à 320 px (vignettes à gauche des lignes, comme dans l'appli : le code
+                   d'intégration proposé pour co-services.js), puis les 33 grands plans ; toucher une vignette
+                   ouvre la feuille du grand plan
+   ?planche        toutes les vignettes en planche de contrôle (4 colonnes) · ?planche=2 : agrandies ×2
+   ?grands         les grands plans seulement · ?seul=id : un seul (vignette ×1, ×2 et grand)
+   ?film=id        un plan figé à n instants de sa boucle (&n=12, &taille=mini)
+   ?ids=a,b        seulement ces plans (planche, grands) ; un id inconnu montre le plan générique
+                   (rubrique:talons … rubrique:boutique)
+   ?t=<s>          fige toutes les animations à l'instant t de la boucle (captures) ; ?intro=<s> : pendant l'ouverture
+   ?fixe           sans animation (l'état final, comme prefers-reduced-motion)
+   ?liste          la grille seule (mesures) · &sansplans : sans les vignettes · ?calques=0 : un seul <svg>
+   ?capture        sans la barre */
+(function () {
+  'use strict';
+  const q = new URLSearchParams(location.search);
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const app = $('#app');
+  if (q.has('capture')) document.body.classList.add('capture');
+  const fixe = q.has('fixe');
+  const esc = CO.esc;
+  const delai = CO.delaiTexte;
+
+  /* ---------- 1. la grille, telle que tools/build-pages.mjs l'écrit dans index.html ---------- */
+  function grille() {
+    const out = ['<h2 class="lab-titre">La grille, à 320 px</h2><p class="lab-note">Les vignettes à gauche des lignes (css/co-plans.css) ; toucher une vignette ouvre le grand plan, toucher la ligne la perce comme dans l’appli.</p><div class="cadre-320"><div class="services" id="liste-services">'];
+    for (const r of CO.SERVICES) {
+      out.push(`<section class="rubrique" id="r-${r.id}" data-rub="${r.id}"><h3 class="rub-titre">${esc(r.titre)}</h3><ul class="lignes">`);
+      for (const it of r.items) out.push(`<li class="ligne" id="s-${it.id}" data-id="${it.id}"><span class="l-nom">${esc(it.nom)}</span><span class="l-prix">${esc(CO.prixService(it))}</span><span class="l-desc">${esc(it.desc)}</span><span class="l-delai">${esc(delai(it.delai))}</span></li>`);
+      out.push('</ul></section>');
+    }
+    out.push('</div></div>');
+    return out.join('');
+  }
+
+  /* ---------- 2. l'intégration proposée pour co-services.js (même code) ---------- */
+  function integrer(liste) {
+    const choisis = new Set();
+    const basculer = (li) => { const on = !li.classList.contains('choisi'); li.classList.toggle('choisi', on); on ? choisis.add(li.dataset.id) : choisis.delete(li.dataset.id); };
+    $$('.ligne', liste).forEach((li) => {
+      li.setAttribute('role', 'button');
+      li.setAttribute('tabindex', '0');
+      li.addEventListener('click', () => basculer(li));
+      li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); basculer(li); } });
+    });
+    // --- début du bloc proposé ---
+    if (CO.Plans && !q.has('sansplans')) {
+      $$('.ligne', liste).forEach((li) => {
+        const id = li.dataset.id, it = CO.service(id);
+        li.classList.add('a-plan');
+        li.insertAdjacentHTML('afterbegin', `<button class="plan-mini" type="button" aria-label="${esc('Voir le plan : ' + (it ? it.nom : id))}" data-sfx="none">${CO.Plans.svg(id, { taille: 'mini', decoratif: true, fixe: fixe || undefined })}</button>`);
+        const b = li.firstElementChild;
+        b.addEventListener('click', (e) => {
+          e.stopPropagation(); // la ligne ne se perce pas
+          plans.pause(true);
+          CO.Plans.feuille(id, {
+            action: { texte: li.classList.contains('choisi') ? 'Retirer du devis' : 'Ajouter au devis', fn: () => basculer(li) },
+            onClose: () => plans.pause(false),
+          });
+        });
+        b.addEventListener('keydown', (e) => e.stopPropagation()); // Entrée / Espace : le bouton, pas la ligne
+      });
+      var plans = CO.Plans.observer(liste);
+    }
+    // --- fin du bloc proposé ---
+    return plans;
+  }
+
+  /* ---------- 3. les grands plans ---------- */
+  function galerie(ids) {
+    return '<h2 class="lab-titre">Les grands plans</h2><div class="galerie">' + ids.map((id) => {
+      const inf = CO.Plans.infos(id);
+      return `<figure>${CO.Plans.svg(id, { taille: 'grand', fixe: fixe || undefined })}<figcaption><b>${esc(inf.titre)}</b> · ${esc(inf.alt)}</figcaption></figure>`;
+    }).join('') + '</div>';
+  }
+
+  let tous = [];
+  CO.SERVICES.forEach((r) => r.items.forEach((it) => tous.push(it.id)));
+  if (q.get('ids')) tous = q.get('ids').split(',');
+  let obs = null;
+  if (q.has('planche')) {
+    const k = +q.get('planche') || 1;
+    app.innerHTML = `<div class="planche" style="${k > 1 ? `grid-template-columns:repeat(${Math.max(1, Math.floor(4 / k))},1fr)` : ''}">` + tous.map((id) =>
+      `<div>${CO.Plans.svg(id, { taille: 'mini', joue: true, fixe: fixe || undefined, classe: k > 1 ? 'x' + k : '', calques: q.get('calques') === '0' ? false : undefined })}${esc(CO.Plans.infos(id).titre)}${CO.Plans.infos(id).generique ? ' <b style="color:#b33">(générique)</b>' : ''}</div>`).join('') + '</div>';
+    if (k > 1) { const st = document.createElement('style'); st.textContent = `.planche .plan-mini{width:${64 * k}px;height:${48 * k}px}`; document.head.appendChild(st); }
+  } else if (q.has('seul')) {
+    document.body.classList.add('seul');
+    const id = q.get('seul');
+    app.innerHTML = `<div style="display:flex;gap:10px;align-items:end;padding:12px">${CO.Plans.svg(id, { taille: 'mini', joue: true })}${CO.Plans.svg(id, { taille: 'mini', joue: true, classe: 'x2' })}</div>` + galerie([id]);
+    const st = document.createElement('style'); st.textContent = '.plan-mini.x2{width:128px;height:96px}'; document.head.appendChild(st);
+    $$('.plan', app).forEach((s) => s.classList.add('joue'));
+  } else if (q.has('grands')) {
+    app.innerHTML = galerie(tous);
+    obs = CO.Plans.observer(app);
+  } else if (q.has('film')) {
+    // un plan, figé à n instants de sa boucle (planche-contact de l'animation)
+    const id = q.get('film'), n = +q.get('n') || 12, mini = q.get('taille') === 'mini', D = CO.Plans.infos(id).duree;
+    const ts = Array.from({ length: n }, (_, i) => +(i * D / n).toFixed(2));
+    app.innerHTML = `<div class="planche" style="grid-template-columns:repeat(${mini ? 6 : 3},1fr);gap:8px">` + ts.map((t) =>
+      `<div data-t="${t}">${CO.Plans.svg(id, { taille: mini ? 'mini' : 'grand', joue: true, classe: mini ? 'x2' : '' })}t = ${t} s</div>`).join('') + '</div>';
+    if (mini) { const st = document.createElement('style'); st.textContent = '.plan-mini.x2{width:128px;height:96px}'; document.head.appendChild(st); }
+    requestAnimationFrame(() => $$('[data-t]').forEach((c) => {
+      const t = +c.dataset.t, s = c.querySelector('.plan');
+      s.getAnimations({ subtree: true }).forEach((a) => { a.pause(); a.currentTime = (CO.Plans.INTRO + t) * 1000; });
+    }));
+  } else if (q.has('liste')) {
+    // la grille seule (mesures de performance) ; ?sansplans : la même, sans vignettes
+    app.innerHTML = grille();
+    obs = integrer($('#liste-services'));
+  } else {
+    app.innerHTML = grille() + galerie(tous);
+    obs = integrer($('#liste-services'));
+    CO.Plans.observer($('.galerie'));
+  }
+
+  /* ---------- commandes ---------- */
+  const bp = $('#b-pause'), bf = $('#b-fixe');
+  bp.addEventListener('click', () => {
+    const on = bp.getAttribute('aria-pressed') !== 'true';
+    bp.setAttribute('aria-pressed', String(on));
+    $$('.plan[data-plan]').forEach((s) => s.classList.toggle('plan-pause', on));
+  });
+  bf.addEventListener('click', () => {
+    const on = bf.getAttribute('aria-pressed') !== 'true';
+    bf.setAttribute('aria-pressed', String(on));
+    $$('.plan[data-plan]').forEach((s) => s.classList.toggle('fixe', on));
+  });
+  if (fixe) bf.setAttribute('aria-pressed', 'true');
+  $('#b-vitesse').addEventListener('change', (e) => document.getAnimations().forEach((a) => { a.playbackRate = +e.target.value; }));
+
+  /* ---------- figer un instant (captures) ---------- */
+  function figer(t, enIntro) {
+    $$('.plan[data-plan]').forEach((s) => s.classList.add('joue'));
+    requestAnimationFrame(() => {
+      document.getAnimations().forEach((a) => {
+        a.pause();
+        a.currentTime = enIntro ? t * 1000 : (CO.Plans.INTRO + t) * 1000;
+      });
+      document.documentElement.dataset.fige = '1';
+    });
+  }
+  window.figer = figer;
+  if (q.has('t')) figer(+q.get('t'));
+  if (q.has('intro')) figer(+q.get('intro'), true);
+})();
+</script>
+</body>
+</html>
