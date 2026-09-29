@@ -229,6 +229,19 @@ main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b)
   background: var(--pastille); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px #3E2819;
 }
 .tab-badge[hidden] { display: none; }
+/* les icônes brodées dans le cuir (js/co-onglets.js) : fil crème au repos, fil d'or sur l'onglet ouvert, fil sombre
+   sur le ticket ; tant qu'elles ne sont pas cousues (l'ouverture), la place est vide ; sans JS : l'icône au trait */
+.tab-brode { position: relative; display: block; width: 28px; height: 28px; flex: none; transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
+.tab-brode .tb { position: absolute; inset: 0; transition: opacity .3s ease; }
+.tab-brode canvas.broderie { display: block; max-width: none; }
+.tab .tb-or { opacity: 0; }
+.tab:not(.is-active) .tb-creme { opacity: .8; }
+.tab.is-active .tb-or { opacity: 1; }
+.tab.is-active .tb-creme { opacity: 0; }
+.tab.is-active .tab-brode:not(.tab-brode-ticket) { transform: translateY(-1px); }
+.tab-brode-ticket { width: 27px; height: 27px; }
+html:not(.no-js) .tabbar:not(.brode-ko) .tab > svg, html:not(.no-js) .tabbar:not(.brode-ko) .tab-ticket > svg { display: none; }
+.tabbar.brode-ko .tab-brode { display: none; }
 
 /* ======================================================================
    Accueil

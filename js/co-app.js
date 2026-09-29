@@ -381,7 +381,7 @@
     initHours();
     initLacets();
     try { initBureau(); } catch (e) { console.warn('bureau', e); }
-    ['Commandes', 'Suivi', 'Services', 'Deposer', 'Clous', 'Pro', 'Nous', 'Film', 'Atelier'].forEach((m) => {
+    ['Onglets', 'Commandes', 'Suivi', 'Services', 'Deposer', 'Clous', 'Pro', 'Nous', 'Film', 'Atelier'].forEach((m) => {
       try { CO[m] && CO[m].init && CO[m].init(); } catch (e) { console.warn('module', m, e); }
     });
     route(true);
