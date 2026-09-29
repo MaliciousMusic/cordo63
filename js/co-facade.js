@@ -11,7 +11,7 @@
    bleue, établi au tapis de découpe vert) et Clément qui frappe une semelle ; au coin, le poteau
    du sens interdit ; devant, l'ardoise « Déposez vos paires ! ».
    L'enseigne (la Jordan en bois dans son cadre d'acier, pointe en bas) est dessinée par un autre
-   module (WebGL) et posée par-dessus, au bout gauche du bandeau : on lui réserve sa place
+   module (js/co-enseigne.js, ses images) et posée par-dessus, au bout gauche du bandeau : on lui réserve sa place
    (zoneEnseigne), on dessine sa platine murale et son ombre portée (ombreEnseigne).
    Les calques, du fond vers l'avant :
      monde (ciel lointain, retour de l'angle, mur, devanture, trottoir) → voile du soir → lueurs
@@ -1693,7 +1693,7 @@
           du <svg> : fluide pendant le mouvement, redessinée nette à l'arrivée. */
       camera(r, ms = 800) { return animerCamera(r || null, ms); },
       /** fn({ zoom, x, y }) à chaque image d'un mouvement de caméra (et quand l'hôte change de taille) : pour
-          que l'appli déplace avec elle ce qu'elle pose par-dessus (la Jordan en WebGL). Renvoie de quoi arrêter. */
+          que l'appli déplace avec elle ce qu'elle pose par-dessus (l'enseigne). Renvoie de quoi arrêter. */
       suivre(fn) { suiveurs.add(fn); return () => suiveurs.delete(fn); },
       /** Un rectangle de la scène → sa place en px dans l'hôte (cadrage et caméra compris, même en mouvement) */
       versEcran(r) {

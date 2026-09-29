@@ -12,7 +12,11 @@
    posés par l'appli sont animés.
 
    CO.Etabli.create(host, options) → Promise<établi>
-     options : { disposition: 'services' (défaut) | 'vide', graine: 63, ppm (imposé, px/mm), encombrement: true }
+     options : { disposition: 'services' (défaut) | 'vide', graine: 63, ppm (imposé, px/mm), encombrement: true,
+                 fondFige: 'assets/img/etabli-fond.webp' }
+       fondFige : le décor n'est plus calculé ici : c'est une image rendue une fois pour toutes (tools/render-images.mjs)
+                  d'une fenêtre fixe de l'établi (REF, en mm), que la vue recadre pour couvrir l'hôte ; les objets
+                  posés gardent leur rendu (même lumière, même appareil photo au-dessus du centre de REF)
        'services' : l'encombrement dans les coins et le long du fond, la place libre au centre
        'vide'     : le tapis seul
        La vue s'adapte à la forme de `host` (bandeau large et bas ou vue haute) : la place libre garde
@@ -116,6 +120,58 @@
       avant: y0 + Vh + 45, // le bord avant de l'établi, juste sous le cadre
       bx0: x0, by0: y0,
     };
+  }
+
+  /* ======================================================================
+     Le décor figé : une fenêtre fixe de l'établi (mm), rendue une fois (vueRef, rendreReference) ; l'appli
+     la recadre pour couvrir son hôte (vueFigee) : la place libre est la même partout, au milieu
+     ====================================================================== */
+  const REF = { Vw: 540, Vh: 480, cy: 0.55, libre: { w: 340, h: 214 }, ppm: 2.4 };
+  function vueRef(ppm = REF.ppm) {
+    const b = BIAIS * DEG, Vw = REF.Vw, Vh = REF.Vh, x0 = -Vw / 2, y0 = -Vh * REF.cy;
+    const mg = Math.min(46, Vw * 0.09), mh = Math.min(36, Vh * 0.08);
+    const TW = Math.max(TAPIS.W, Math.min(900, Vw - mg + 140)), TH = Math.max(TAPIS.H, Math.min(620, Vh - mh - 20));
+    return {
+      dpr: 1, s: ppm, ppm, W: Math.round(Vw * ppm), H: Math.round(Vh * ppm), largeur: Vw * ppm, hauteur: Vh * ppm, Vw, Vh, x0, y0, biais: b,
+      libre: { x: 0, y: 0, w: REF.libre.w, h: REF.libre.h },
+      tapis: { x: x0 + mg + TW / 2, y: y0 + mh + TH / 2, angle: b, W: Math.round(TW), H: Math.round(TH), coin: 0 },
+      cx: x0 + Vw / 2, cy: y0 + Vh / 2, avant: y0 + Vh + 45, bx0: x0, by0: y0,
+    };
+  }
+  function vueFigee(largeur, hauteur) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1), ref = vueRef();
+    // couvrir : l'image remplit l'hôte, ce qui dépasse est coupé (on ne voit jamais au-delà de REF)
+    let s = Math.max(largeur / REF.Vw, hauteur / REF.Vh);
+    const ppm = Math.ceil(s * dpr * 20) / 20;
+    s = ppm / dpr;
+    const Vw = largeur / s, Vh = hauteur / s;
+    const x0 = ref.cx - Vw / 2, y0 = ref.cy - Vh / 2;
+    return {
+      dpr, s, ppm, W: Math.round(largeur * dpr), H: Math.round(hauteur * dpr), largeur, hauteur, Vw, Vh, x0, y0, biais: ref.biais,
+      libre: ref.libre, tapis: ref.tapis, cx: ref.cx, cy: ref.cy, avant: ref.avant, bx0: x0, by0: y0, ref,
+    };
+  }
+  const images = new Map();
+  function imageFond(url) {
+    if (!images.has(url)) {
+      images.set(url, new Promise((res, rej) => {
+        const im = new Image();
+        im.decoding = 'async';
+        im.onload = () => (im.decode ? im.decode().catch(() => {}) : Promise.resolve()).then(() => res(im));
+        im.onerror = () => { images.delete(url); rej(new Error('établi : ' + url)); };
+        im.src = url;
+      }));
+    }
+    return images.get(url);
+  }
+  /** le décor d'une vue figée : le morceau de l'image de référence qu'elle voit, à sa taille */
+  async function decorFige(V, url) {
+    const im = await imageFond(url);
+    const k = im.naturalWidth / REF.Vw; // px de l'image par mm
+    const c = R.canvas(V.W, V.H), g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(im, (V.x0 - V.ref.x0) * k, (V.y0 - V.ref.y0) * k, V.Vw * k, V.Vh * k, 0, 0, V.W, V.H);
+    return c;
   }
 
   /* ======================================================================
@@ -256,6 +312,9 @@
    * surBase(canvas) : appelé dès que l'établi et le tapis sont prêts (l'encombrement vient ensuite).
    */
   async function decor(V, opts, prio, surBase) {
+    if (opts.fondFige && V.ref) {
+      try { return await decorFige(V, opts.fondFige); } catch (e) { console.warn(e); } // (l'image manque : on calcule)
+    }
     const cle = cleFond(V, opts);
     const c = R.cache.get(cle);
     if (c) return c.canvas;
@@ -288,7 +347,7 @@
       const r = this.host.getBoundingClientRect();
       const larg = Math.max(40, r.width || this.host.clientWidth || 360), haut = Math.max(40, r.height || this.host.clientHeight || 300);
       const gen = ++this.gen;
-      const V = (this.V = vue(larg, haut, this.opts.disposition, this.opts.ppm));
+      const V = (this.V = this.opts.fondFige ? vueFigee(larg, haut) : vue(larg, haut, this.opts.disposition, this.opts.ppm));
       this.cv.width = V.W;
       this.cv.height = V.H;
       this.dessiner();
@@ -542,6 +601,7 @@
       const r = this.host.getBoundingClientRect();
       if (!r.width || !r.height) return;
       if (this.V && Math.abs(r.width - this.V.largeur) < 1 && Math.abs(r.height - this.V.hauteur) < 1 && Math.min(2, window.devicePixelRatio || 1) === this.V.dpr) return;
+      if (this.opts.fondFige) { this.gen++; await this._mettreEnPage(); return; } // (pas de fond noir entre deux : l'image est là tout de suite)
       this.fond = null;
       await this._mettreEnPage();
     },
@@ -706,14 +766,24 @@
       return api(E);
     },
     /** calcule le décor d'une vue de largeur × hauteur px CSS, et les objets des services, aux temps morts */
-    prechauffer({ largeur = 390, hauteur = 320, disposition = 'services', graine = 63, encombrement = true } = {}) {
-      const V = vue(largeur, hauteur, disposition);
-      decor(V, { disposition, graine, encombrement }, 0).catch(() => {});
+    prechauffer({ largeur = 390, hauteur = 320, disposition = 'services', graine = 63, encombrement = true, fondFige = null } = {}) {
+      const V = fondFige ? vueFigee(largeur, hauteur) : vue(largeur, hauteur, disposition);
+      if (fondFige) imageFond(fondFige).catch(() => {});
+      else decor(V, { disposition, graine, encombrement }, 0).catch(() => {});
       for (const id of [...new Set(Object.values(SERVICES).flat())]) {
         if (O.defs[id]) O.preparer(id, { ppm: V.ppm, angle: BIAIS, graine, oeil: [V.cx - V.libre.x, V.cy - V.libre.y] }, 0).catch(() => {});
       }
     },
+    REF,
+    /** l'image de référence du décor figé (l'outil tools/render-images.mjs l'enregistre) : → Promise<canvas> */
+    async rendreReference({ ppm = REF.ppm, graine = 63 } = {}) {
+      const V = vueRef(ppm), opts = { disposition: 'services', graine, encombrement: true };
+      const base = await R.lancer(genBase(V, opts), { prio: 3, cle: 'ref|base' });
+      const enc = encombrer(V, graine);
+      return R.lancer(composer(base.canvas, enc, V), { prio: 3, cle: 'ref|encombrement' });
+    },
     _vue: vue,
+    _vueFigee: vueFigee,
     _encombrer: encombrer,
     _genFond: genFond,
     _genBase: genBase,
