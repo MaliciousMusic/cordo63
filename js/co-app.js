@@ -387,7 +387,12 @@
     route(true);
     CO.on('view', (v) => { if (v === 'accueil') revenirRue(); });
     const fac = initFacade();
-    const splash = CO.splash ? CO.splash() : Promise.resolve({ skipped: true });
+    // l'appli est chargée quand la page et ses ressources, ses polices et la devanture sont là : l'ouverture
+    // (l'écran de chargement) tourne jusque-là
+    const page = new Promise((r) => (document.readyState === 'complete' ? r() : window.addEventListener('load', r, { once: true })));
+    const polices = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    const pret = Promise.all([fac, page, polices]).catch(() => {});
+    const splash = CO.splash ? CO.splash({ pret }) : Promise.resolve({ skipped: true });
     const [f, sp] = await Promise.all([fac, splash]);
     // « l'appli est dévoilée » : les calculs lourds des autres onglets attendent ce signal (l'ouverture l'émet elle-même)
     if (!sp || !sp.revele) CO.emit('ouverture', sp || { skipped: true });

@@ -1,11 +1,15 @@
 /* ==========================================================================
    Cordo 63 — l'ouverture : l'écran lacé, puis délacé
-   À l'arrivée, une vingtaine de lacets plats de toutes les couleurs de la boutique viennent lacer tout
-   l'écran : une toile serrée, dessus, dessous (l'appli est déjà là, dessous : on la devine entre les
-   mailles). Au milieu, deux lacets enfilés de cubes de bois lettrés, les perles des enfants :
-   « CORDO 63 » sur un lacet rouge, et plus petit, « PAR CLÉMENT PETIT » sur un lacet crème, replié en
-   deux rangs. Ils s'enfilent : le lacet avance d'un bout à l'autre, chaque cube paraît quand le ferret
-   atteint son trou. Dessous, « Entrer » (le geste qui autorise le son) et « Entrer sans le son » (une
+   L'ouverture est aussi l'écran de chargement : elle couvre tout l'écran dès la première image (un
+   script dans le <head> pose html.ouverture ; dessous, un fond d'établi sombre, opaque : l'appli qui se
+   construit ne se voit pas). Une vingtaine de lacets plats de toutes les couleurs de la boutique viennent
+   lacer l'écran : une toile serrée, dessus, dessous. Au milieu, deux lacets enfilés de cubes de bois
+   lettrés, les perles des enfants : « CORDO 63 » sur un lacet rouge, et plus petit, « PAR CLÉMENT PETIT »
+   sur un lacet crème, replié en deux rangs. Ils s'enfilent : le lacet avance d'un bout à l'autre, chaque
+   cube paraît quand le ferret atteint son trou. Puis, tant que l'appli se prépare, les cubes tournent un
+   à un sur leur lacet (une vague, une note de marimba chacun : un petit air), et la vague repart ; une
+   fois tout chargé (CO.splash({ pret })), la vague finit et paraissent « Entrer » (le geste qui autorise
+   le son : l'air ne s'entend avant que si l'on a déjà touché l'écran) et « Entrer sans le son » (une
    étiquette de kraft).
    On entre : sur le beat de l'atelier (la forme en fonte en grosse caisse, le marteau à plat en caisse
    claire, le cutter en charleston), les lacets de la toile filent un à un le long de leur tracé et sortent
@@ -18,9 +22,12 @@
    puis seulement posé, tourné, glissé ; les croisements « dessus » sont redessinés dans leur losange (un
    chemin de découpe par lacet), et la lumière des croisements (le dos d'âne du lacet qui passe dessus,
    l'ombre de celui qui plonge dessous) est un motif calé sur la ligne de chaque lacet : il ne glisse pas
-   avec lui. Chaque cube est dessiné une fois (une vraie projection : faces, arêtes arrondies, veines du
-   bois, lettres) ; au repos, les deux lacets à perles ne sont qu'une image.
-     CO.splash() → Promise, résolue quand l'appli est dévoilée : { revele: true } (ou { skipped: true })
+   avec lui. Posée, la toile n'est plus qu'une image. Chaque cube est dessiné une fois (une vraie
+   projection : ses six faces, arêtes arrondies, veines du bois, lettres) ; quand il tourne sur son
+   lacet, il est redessiné à chaque image (deux ou trois à la fois) ; au repos, les deux lacets à perles
+   ne sont qu'une image.
+     CO.splash({ pret }) → Promise, résolue quand l'appli est dévoilée : { revele: true } (ou { skipped: true })
+                          pret : une Promise, résolue quand l'appli est chargée (sinon : tout de suite)
    ========================================================================== */
 (function () {
   'use strict';
@@ -116,6 +123,14 @@
       O.noise(c, o, t, { f: f0, f2: f1, q: 2.4, a: 0.012, d: 0.07, hold: 0.12, v: 0.042 * v });
       O.noise(c, o, t + 0.005, { f: 5200, type: 'highpass', a: 0.001, d: 0.012, v: 0.012 * v });
       O.noise(c, o, t + 0.14, { f: 2400, f2: 800, q: 0.8, a: 0.01, d: 0.1, v: 0.016 * v });
+    }, { gap: 0 });
+    // l'air du chargement : une note par cube qui tourne, une lame de marimba (le bois, une fondamentale qui chante)
+    if (manque('sp-tinte')) CO.sfx.ajouter('sp-tinte', (c, o, t, opts, O) => {
+      const v = opts.v || 1, f = O.midi(opts.m || 84);
+      O.tone(c, o, t, { f, type: 'sine', a: 0.004, d: 0.5, v: 0.05 * v });
+      O.tone(c, o, t, { f: f * 3.99, type: 'sine', a: 0.002, d: 0.07, v: 0.011 * v });
+      O.strike(c, o, t, f * 0.5, 'wood', { d: 0.05, v: 0.018 * v });
+      O.noise(c, o, t, { f: 3200, q: 1.2, a: 0.0008, d: 0.012, v: 0.008 * v });
     }, { gap: 0 });
     // un cube de bois lâché : un « toc » sec, accordé
     if (manque('sp-perle')) CO.sfx.ajouter('sp-perle', (c, o, t, opts, O) => {
@@ -425,14 +440,22 @@
      ====================================================================== */
   const mul3 = (A, B) => { const C = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C.push(A[i * 3] * B[j] + A[i * 3 + 1] * B[3 + j] + A[i * 3 + 2] * B[6 + j]); return C; };
   const app3 = (M, v) => [M[0] * v[0] + M[1] * v[1] + M[2] * v[2], M[3] * v[0] + M[4] * v[1] + M[5] * v[2], M[6] * v[0] + M[7] * v[1] + M[8] * v[2]];
-  function rotation(lacet, bascule, roulis) { // autour de la verticale, vers nous (on voit le dessus), dans le plan de l'écran
+  // autour de la verticale, vers nous (on voit le dessus), dans le plan de l'écran ; et d'abord « tour » :
+  // le cube qui tourne sur son lacet (l'axe des trous, x), le dessus qui vient vers nous puis descend
+  function rotation(lacet, bascule, roulis, tour = 0) {
     const cy = Math.cos(lacet), sy = Math.sin(lacet), ct = Math.cos(bascule), st = Math.sin(bascule), cr = Math.cos(roulis), sr = Math.sin(roulis);
-    return mul3([cr, -sr, 0, sr, cr, 0, 0, 0, 1], mul3([1, 0, 0, 0, ct, -st, 0, st, ct], [cy, 0, sy, 0, 1, 0, -sy, 0, cy]));
+    const R = mul3([cr, -sr, 0, sr, cr, 0, 0, 0, 1], mul3([1, 0, 0, 0, ct, -st, 0, st, ct], [cy, 0, sy, 0, 1, 0, -sy, 0, cy]));
+    if (!tour) return R;
+    const ca = Math.cos(tour), sa = Math.sin(tour);
+    return mul3(R, [1, 0, 0, 0, ca, -sa, 0, sa, ca]);
   }
-  // les faces qu'on peut voir (x à droite, y en haut, z vers nous) ; u, v : la droite et le bas de la face
+  // les six faces (x à droite, y en haut, z vers nous) ; u, v : la droite et le bas de la lettre de la face
+  // (u × v = −n : aucune lettre en miroir ; chacune se lit droite quand le cube tourne et l'amène devant)
   const FACES = [
     { nom: 'avant', n: [0, 0, 1], u: [1, 0, 0], v: [0, -1, 0] },
     { nom: 'dessus', n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] },
+    { nom: 'arriere', n: [0, 0, -1], u: [1, 0, 0], v: [0, 1, 0] },
+    { nom: 'dessous', n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, -1] },
     { nom: 'gauche', n: [-1, 0, 0], u: [0, 0, 1], v: [0, -1, 0] },
     { nom: 'droite', n: [1, 0, 0], u: [0, 0, -1], v: [0, -1, 0] },
   ];
@@ -440,8 +463,9 @@
   const eclat = (n) => 0.42 + 0.58 * Math.max(0, n[0] * LUMIERE[0] + n[1] * LUMIERE[1] + n[2] * LUMIERE[2]);
 
   // la géométrie d'un cube tourné (projection orthogonale) : sa silhouette, ses faces vues, ses deux trous
-  function geomCube(s, lacet, bascule, roulis) {
-    const h = s / 2, R = rotation(lacet, bascule, roulis);
+  // (tour : l'angle du cube sur son lacet ; les trous, sur l'axe, ne bougent pas)
+  function geomCube(s, lacet, bascule, roulis, tour = 0) {
+    const h = s / 2, R = rotation(lacet, bascule, roulis, tour);
     const P = (v) => { const p = app3(R, v); return [p[0], -p[1]]; };
     const coins = [];
     [-h, h].forEach((x) => [-h, h].forEach((y) => [-h, h].forEach((z) => coins.push(P([x, y, z])))));
@@ -518,27 +542,34 @@
       g.beginPath(); g.ellipse(x, y, 0.4 + rng() * 1.1, 0.3 + rng() * 0.6, rng() * 3, 0, TOUR); g.fill();
     }
   }
-  // un cube dessiné une fois, à sa rotation : le corps, puis chaque face vue (teinte selon sa lumière,
-  // veines, arêtes arrondies qui prennent ou perdent la lumière, lettre ou trou)
-  function dessinerCube(geo, o, dpr, police, rng) {
+  // un cube dessiné à sa rotation : le corps, puis chaque face vue (teinte selon sa lumière, veines, arêtes
+  // arrondies qui prennent ou perdent la lumière, lettre ou trou). Le hasard de chaque face vient de la graine
+  // du cube : quand il tourne, ses veines et son usure ne changent pas d'une image à l'autre. cible : un
+  // canvas à réutiliser (le cube qui tourne, redessiné à chaque image), sinon un neuf. ref : la lumière de
+  // la face avant au repos (les faces gardent leur teinte en tournant).
+  function dessinerCube(geo, o, dpr, police, rng, cible, ref) {
     const { s, h, R, coque, faces } = geo;
     const r = s * 0.12, marge = 2;
     const cx = -geo.x0 + marge, cy = -geo.y0 + marge;
     const lw = geo.x1 - geo.x0 + 2 * marge, lh = geo.y1 - geo.y0 + 2 * marge;
-    const cv = document.createElement('canvas');
-    cv.width = Math.ceil(lw * dpr); cv.height = Math.ceil(lh * dpr);
+    const cv = cible || document.createElement('canvas');
+    const W2 = Math.ceil(lw * dpr), H2 = Math.ceil(lh * dpr);
+    if (cv.width !== W2 || cv.height !== H2) { cv.width = W2; cv.height = H2; }
     const g = cv.getContext('2d');
+    if (cible) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); }
     const base = o.bois ? BOIS : o.couleur;
-    const ref = eclat(app3(R, [0, 0, 1]));
+    if (ref == null) ref = eclat(app3(R, [0, 0, 1]));
+    const hasard = (k) => (CO.rng && o.graine != null ? CO.rng(o.graine * 7 + k * 7919) : rng);
     g.setTransform(dpr, 0, 0, dpr, dpr * cx, dpr * cy);
     g.beginPath(); arrondi(g, coque, r); g.fillStyle = css(teinte(base, 0.74)); g.fill();
     faces.forEach(({ F, n, c, U, V }) => {
+      const rf = hasard(FACES.indexOf(F) + 1);
       g.save();
       g.setTransform(dpr * U[0], dpr * U[1], dpr * V[0], dpr * V[1], dpr * (cx + c[0]), dpr * (cy + c[1]));
       g.beginPath(); rrect(g, -h, -h, 2 * h, 2 * h, r);
       g.fillStyle = css(teinte(base, eclat(n) / ref)); g.fill();
       g.clip();
-      if (o.bois) veinage(g, F.nom, h, rng, 1); // les veines sur le bois brut (la peinture les couvre)
+      if (o.bois) veinage(g, F.nom === 'dessous' ? 'dessus' : F.nom, h, rf, 1); // les veines sur le bois brut (la peinture les couvre) ; dessus, dessous : le bois de bout
       // les arêtes arrondies : chaque bord prend la lumière de sa propre pente
       const bw = s * 0.16;
       [[0, -1], [0, 1], [-1, 0], [1, 0]].forEach(([ea, eb]) => {
@@ -556,7 +587,7 @@
         gr.addColorStop(0.55, 'rgba(24,14,6,0)'); gr.addColorStop(1, 'rgba(24,14,6,.12)');
         g.fillStyle = gr; g.fillRect(-h, -h, 2 * h, 2 * h);
         lettre(g, o.lettre, h, police, 0.94);
-        if (!o.bois) usure(g, h, rng);
+        if (!o.bois) usure(g, h, rf);
         // le vernis accroche la lumière sur l'arête du dessus
         g.beginPath(); g.moveTo(-h + r, -h + 0.9); g.lineTo(h - r, -h + 0.9);
         g.strokeStyle = o.bois ? 'rgba(255,248,230,.3)' : 'rgba(255,255,255,.42)'; g.lineWidth = 1; g.stroke();
@@ -566,6 +597,9 @@
         g.fillStyle = gr; g.fillRect(-h, -h, 2 * h, 2 * h);
         g.rotate((o.tour * Math.PI) / 2);
         lettre(g, o.dessus, h * 0.84, police, 0.72);
+      } else if (F.nom === 'arriere' || F.nom === 'dessous') { // on ne les voit que quand le cube tourne
+        lettre(g, F.nom === 'arriere' ? o.arriere : o.dessous, h, police, 0.9);
+        if (!o.bois) usure(g, h, rf);
       } else trou(g, s);
       g.restore();
     });
@@ -607,7 +641,9 @@
       return prec;
     };
     const largeur = (texte, s) => { let n = 0, e = 0; for (const ch of texte) { if (ch === ' ') e++; else n++; } return s * (n * K + (n - 1) * GP + e * ESP); };
+    let nRang = -1;
     const rang = (texte, s, y, x0, sens) => {
+      nRang++;
       const long = largeur(texte, s), sag = 0.09 * s, mil = x0 + long / 2;
       const cubes = [];
       let x = x0;
@@ -616,8 +652,14 @@
         const cx = x + (s * K) / 2, u = (cx - mil) / (long / 2);
         const pente = (-4 * sag * u) / long;
         const ci = couleur();
-        const geo = geomCube(s, (rng() < 0.5 ? -1 : 1) * (0.14 + rng() * 0.2), 0.27 + rng() * 0.13, -Math.atan(pente) + (rng() - 0.5) * 0.12);
-        cubes.push({ lettre: ch, s, x: cx, y: y + sag * (1 - u * u), sens, couleur: CUBES[ci], bois: !CUBES[ci], dessus: DESSUS[Math.floor(rng() * DESSUS.length)], tour: Math.floor(rng() * 4), geo, etat: { dx: 0, dy: 0, a: 0, sc: 1, al: 1 }, chute: null });
+        const ang = [(rng() < 0.5 ? -1 : 1) * (0.14 + rng() * 0.2), 0.27 + rng() * 0.13, -Math.atan(pente) + (rng() - 0.5) * 0.12];
+        const geo = geomCube(s, ang[0], ang[1], ang[2]);
+        const autre = () => DESSUS[Math.floor(rng() * DESSUS.length)];
+        cubes.push({
+          lettre: ch, s, x: cx, y: y + sag * (1 - u * u), sens, couleur: CUBES[ci], bois: !CUBES[ci], dessus: autre(), arriere: autre(), dessous: autre(),
+          tour: Math.floor(rng() * 4), ang, geo, ref: eclat(app3(geo.R, [0, 0, 1])), graine: Math.floor(rng() * 1e6), rang: nRang,
+          etat: { dx: 0, dy: 0, a: 0, sc: 1, al: 1, tour: 0 }, chute: null,
+        });
         x += s * (K + GP);
       }
       return { cubes, x0, x1: x0 + long };
@@ -783,7 +825,8 @@
         if (cb.chute || !cb.img || e.al <= 0) return;
         g.globalAlpha = lc.alpha * e.al;
         pose(cb.x + e.dx, cb.y + e.dy, e.a, e.sc);
-        g.drawImage(cb.img.cv, -cb.img.cx, -cb.img.cy, cb.img.w, cb.img.h);
+        const im = cb.vue || cb.img; // (le cube qui tourne sur son lacet : son image de l'instant)
+        g.drawImage(im.cv, -im.cx, -im.cy, im.w, im.h);
       });
     });
     g.globalAlpha = 1;
@@ -796,7 +839,7 @@
         g.save();
         g.setTransform(k, 0, 0, k, 0, k * oy);
         g.beginPath();
-        cb.geo.face.forEach(([x, y], j) => { if (j) g.lineTo(cb.x + x, cb.y + y); else g.moveTo(cb.x + x, cb.y + y); });
+        (cb.vueGeo || cb.geo).face.forEach(([x, y], j) => { if (j) g.lineTo(cb.x + x, cb.y + y); else g.moveTo(cb.x + x, cb.y + y); });
         g.closePath();
         g.clip();
         cordon(g, p, lc);
@@ -823,16 +866,27 @@
   /* ======================================================================
      CO.splash
      ====================================================================== */
-  CO.splash = function () {
+  /** l'ouverture joue-t-elle ? Une fois par visite ; ?intro la rejoue, ?nointro la saute. (Le même calcul que le
+      petit script du <head>, qui pose html.ouverture pour que l'écran soit couvert dès la première image.) */
+  CO.splashDecide = function () {
+    const q = new URLSearchParams(location.search);
+    let deja = false;
+    try { deja = sessionStorage.getItem('co-intro') === '1'; } catch (e) { /* navigation privée */ }
+    return !q.has('nointro') && (!deja || q.has('intro'));
+  };
+  CO.splash = function (opts = {}) {
     return new Promise((resolve) => {
       const el = $('#splash');
-      const q = new URLSearchParams(location.search);
-      let deja = false;
-      try { deja = sessionStorage.getItem('co-intro') === '1'; } catch (e) { /* navigation privée */ }
-      if (!el || q.has('nointro') || (deja && !q.has('intro'))) { resolve({ skipped: true }); return; }
-      try { sessionStorage.setItem('co-intro', '1'); } catch (e) { /* idem */ }
+      const racine = document.documentElement;
+      if (!el || !CO.splashDecide()) { racine.classList.remove('ouverture'); el && (el.hidden = true); resolve({ skipped: true }); return; }
+      try { sessionStorage.setItem('co-intro', '1'); } catch (e) { /* navigation privée */ }
+      racine.classList.add('ouverture');
       sons();
       el.hidden = false;
+      // l'appli chargée (la page, ses polices, la devanture…) : la vague des cubes finit et « Entrer » paraît
+      let charge = false;
+      Promise.resolve(opts.pret).then(() => { charge = true; }, () => { charge = true; });
+      setTimeout(() => { charge = true; }, 15000); // (au cas où : on n'attend pas indéfiniment)
       const cv = $('#splash-lacis', el), badge = $('#splash-badge', el), hote = $('#splash-perles', el);
       const btn = $('#splash-entrer', el), muet = $('#splash-muet', el);
       if (muet && CO.sfx && !CO.sfx.on) muet.hidden = true;
@@ -882,7 +936,7 @@
         const etape = () => {
           if (plan !== p || fini || lance) return;
           const t = performance.now();
-          while (i < cubes.length && performance.now() - t < 24) { const cb = cubes[i++]; cb.img = dessinerCube(cb.geo, cb, dc, police, rng); }
+          while (i < cubes.length && performance.now() - t < 24) { const cb = cubes[i++]; cb.img = dessinerCube(cb.geo, cb, dc, police, rng, null, cb.ref); }
           if (i < cubes.length) { setTimeout(etape, 0); return; }
           const repos = () => {
             if (plan !== p || fini || lance) return;
@@ -924,7 +978,12 @@
       }
       function perles(now) {
         if (!plan || !plan.pret) return 0;
+        const tourne = plan.lacets.some((lc) => lc.cubes.some((cb) => cb.vue));
         const calme = plan.lacets.every((lc) => !lc.entre && !lc.delta && lc.alpha >= 1);
+        if (calme && tourne) { // seuls des cubes tournent : tout le reste est au repos (les bouts de lacet dans les trous compris)
+          plan.lacets.forEach((lc) => { lc.trace = lc.traceRepos; });
+          return dessinerPerles(ctx, plan, now, dpr, plan.oy, true, H - plan.oy + 10);
+        }
         if (calme && plan.image) {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.drawImage(plan.image.cv, 0, Math.round((plan.oy + plan.image.y) * dpr));
@@ -944,6 +1003,11 @@
         if (!ctx || !G) return;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, cv.width, cv.height);
+        if (G.fixe && G.cache) { // la toile posée : son image
+          ctx.drawImage(G.cache, 0, 0);
+          tombent = perles(now || performance.now());
+          return;
+        }
         const L = G.lacets;
         L.forEach((l) => { if (l.f === 0 && !l.parti) { poser(l); ombrer(l); } });
         L.forEach((l) => { if (l.f === 1 && !l.parti) { poser(l); ombrer(l); } });
@@ -956,6 +1020,12 @@
           ombrer(l);
           ctx.restore();
         });
+        if (G.fixe && !G.cache) { // elle vient de se poser : on la garde en image (rien ne bouge plus sous les perles)
+          const c = document.createElement('canvas');
+          c.width = cv.width; c.height = cv.height;
+          c.getContext('2d').drawImage(cv, 0, 0);
+          G.cache = c;
+        }
         tombent = perles(now || performance.now());
       }
 
@@ -985,6 +1055,8 @@
             return p < 1;
           });
         });
+        const g0 = G;
+        bouger(() => { if (G !== g0) return false; if (g0.lacets.every((l) => l.o === 0)) { g0.fixe = true; return false; } return true; });
       }
       // l'enfilage : le lacet avance d'un bout à l'autre (« CORDO 63 » depuis sa queue, l'autre depuis le bord),
       // et chaque cube paraît quand le ferret atteint son trou (il grossit en place, un petit rebond)
@@ -1014,7 +1086,70 @@
       }
       function perlesAuRepos() {
         if (!plan) return;
-        plan.lacets.forEach((lc) => { lc.entre = false; lc.alpha = 1; lc.cubes.forEach((cb) => { cb.etat.dx = 0; cb.etat.dy = 0; cb.etat.a = 0; cb.etat.sc = 1; cb.etat.al = 1; }); });
+        plan.lacets.forEach((lc) => { lc.entre = false; lc.alpha = 1; lc.cubes.forEach((cb) => { cb.etat.dx = 0; cb.etat.dy = 0; cb.etat.a = 0; cb.etat.sc = 1; cb.etat.al = 1; cb.vue = null; cb.vueGeo = null; }); });
+      }
+
+      /* le chargement : tant que l'appli se prépare, les cubes tournent un à un sur leur lacet, dans l'ordre de
+         la lecture (un temps de plus entre deux mots, entre deux rangs), chacun sa note : un petit air de
+         marimba ; puis la vague repart. L'appli chargée, la vague finit (au moins une) et les boutons paraissent. */
+      // l'air : une vague qui monte et descend sur CORDO 63, une levée sur PAR, CLÉMENT qui chante, PETIT qui se pose sur la tonique
+      const AIR = [76, 79, 84, 81, 79, 76, 79, 72, 74, 76, 79, 81, 84, 86, 84, 81, 79, 81, 84, 88, 86, 84];
+      const PAS_VAGUE = 76, TOUR_MS = 560, BLANC = 70, RANG = 150, REPOS_VAGUE = 420;
+      const tourDe = (p) => { const c = 0.9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); }; // lancé d'une pichenette, un rien trop loin, posé
+      let attente = 0, vagues = 0, montre = false;
+      function ordreLecture() {
+        const tous = [];
+        plan.lacets.forEach((lc) => lc.cubes.forEach((cb) => tous.push(cb)));
+        tous.sort((a, b) => a.rang - b.rang || a.x - b.x);
+        let t = 0, prec = null;
+        return tous.map((cb, j) => {
+          if (prec) t += PAS_VAGUE + (cb.rang !== prec.rang ? RANG : cb.x - prec.x > cb.s * 1.6 ? BLANC : 0);
+          prec = cb;
+          return { cb, t, m: AIR[j % AIR.length] };
+        });
+      }
+      function vague(t0) {
+        const ral = lent(), ordre = ordreLecture();
+        const lat = CO.sfx && CO.sfx.latency ? CO.sfx.latency() * 1000 : 0;
+        const dc = Math.min(2, window.devicePixelRatio || 1);
+        const fin = (ordre[ordre.length - 1].t + TOUR_MS) * ral;
+        let iNote = 0;
+        bouger((now) => {
+          if (lance || fini || !plan) { ordre.forEach(({ cb }) => { cb.vue = null; cb.vueGeo = null; }); return false; }
+          const t = now - t0;
+          while (iNote < ordre.length && ordre[iNote].t * ral < t + 120) { // les notes, programmées juste à temps
+            const o = ordre[iNote++];
+            if (CO.sfx) CO.sfx.play('sp-tinte', { m: o.m, v: 0.9, delay: Math.max(1, o.t * ral - t + lat) });
+          }
+          ordre.forEach(({ cb, t: tc }) => {
+            const p = (t - tc * ral) / (TOUR_MS * ral);
+            if (p <= 0 || p >= 1) { if (cb.vue) { cb.vue = null; cb.vueGeo = null; } return; }
+            cb.vueGeo = geomCube(cb.s, cb.ang[0], cb.ang[1], cb.ang[2], TOUR * tourDe(p));
+            cb.vueCv = cb.vueCv || document.createElement('canvas');
+            cb.vue = dessinerCube(cb.vueGeo, cb, dc, police, rng, cb.vueCv, cb.ref);
+          });
+          return t < fin;
+        });
+        return t0 + fin;
+      }
+      function montrer() {
+        if (montre || fini) return;
+        montre = true;
+        if (badge) badge.classList.add('on');
+      }
+      function chargement(t0) {
+        if (fini || lance) return;
+        if (reduit || !plan || !plan.pret) { // pas de vague : les boutons dès que l'appli est chargée
+          const guette = () => { if (fini || lance) return; if (charge) montrer(); else attente = setTimeout(guette, 120); };
+          guette();
+          return;
+        }
+        const tFin = vague(t0);
+        vagues++;
+        attente = setTimeout(() => {
+          if (fini || lance) return;
+          if (charge) montrer(); else chargement(performance.now());
+        }, Math.max(0, tFin - performance.now()) + (charge ? 60 : REPOS_VAGUE * lent()));
       }
 
       let fini = false, lance = false;
@@ -1030,7 +1165,8 @@
         if (fini) return;
         fini = true;
         el.classList.add('part');
-        setTimeout(() => { el.hidden = true; el.classList.remove('part', 'lance'); if (badge) badge.classList.remove('on'); nettoyer(); }, 380);
+        clearTimeout(attente);
+        setTimeout(() => { el.hidden = true; racine.classList.remove('ouverture'); el.classList.remove('part', 'lance'); if (badge) badge.classList.remove('on'); nettoyer(); }, 380);
         const r = Object.assign({ revele: true }, opts);
         resolve(r);
         if (CO.emit) CO.emit('ouverture', r); // (les calculs lourds des autres onglets peuvent attendre ce signal)
@@ -1048,8 +1184,10 @@
         const tA = performance.now();
         while (CO.Facade && !CO.facade && performance.now() - tA < 1500) await CO.wait(60);
         if (fini) return;
+        clearTimeout(attente);
         mouvements.clear(); // l'arrivée n'est peut-être pas finie : chaque lacet repart d'où il est, les perles se posent
         perlesAuRepos();
+        G.fixe = false; G.cache = null; // la toile va bouger
         const ral = lent();
         const lat = CO.sfx && CO.sfx.latency ? CO.sfx.latency() * 1000 : 0;
         const B = beat(90, 16, ral), at = B.at, sonsA = B.sons;
@@ -1140,10 +1278,11 @@
           if (fini || lance || !G) return;
           if (Math.abs((el.clientWidth || innerWidth) - W) < 2 && Math.abs((el.clientHeight || innerHeight) - H) < 2) return;
           mouvements.clear();
+          clearTimeout(attente);
           preparer();
-          if (G) G.lacets.forEach((l) => { l.o = 0; });
+          if (G) { G.lacets.forEach((l) => { l.o = 0; }); G.fixe = true; }
           dessiner();
-          if (policePrete) perlesImages(() => { dessiner(); if (badge) badge.classList.add('on'); });
+          if (policePrete) perlesImages(() => { dessiner(); if (!montre) chargement(performance.now()); });
         }, 120);
       }
       window.addEventListener('resize', surTaille);
@@ -1153,24 +1292,26 @@
       requestAnimationFrame(() => {
         if (fini) return;
         preparer();
-        const montrer = () => { if (badge && !fini) badge.classList.add('on'); };
         if (reduit || !ctx) {
+          if (G) G.fixe = true;
           dessiner();
-          montrer();
+          chargement(0);
           pret.then(() => { if (!fini && !lance) perlesImages(() => dessiner()); });
           return;
         }
         const tInit = performance.now();
         entree();
-        // les boutons arrivent avec les perles (ou, si elles tardent, au bout d'une seconde et demie)
-        const secours = setTimeout(montrer, 1500);
+        // les perles tardent (la police) : les boutons viennent quand même, l'appli chargée
+        const secours = setTimeout(() => { if (!plan || !plan.pret) chargement(0); }, 2500);
         pret.then(() => {
           if (fini || lance) return;
           perlesImages(() => {
             const t0 = Math.max(performance.now(), tInit + 320 * lent());
             entreePerles(t0);
             clearTimeout(secours);
-            setTimeout(montrer, Math.max(0, t0 - performance.now()) + 60);
+            // l'enfilage fini (le second lacet : 200 + 1000 ms, et le dernier cube qui se pose), la première vague
+            const t1 = t0 + 1460 * lent();
+            attente = setTimeout(() => chargement(t1), Math.max(0, t1 - performance.now()));
           });
         });
       });

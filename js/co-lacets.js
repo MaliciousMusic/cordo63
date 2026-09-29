@@ -797,8 +797,7 @@
     function doigtGuetter() {
       if (doigt.fini || detruit) return;
       // l'ouverture couvre encore l'écran : on attend qu'elle ait dévoilé l'appli
-      const splash = document.getElementById('splash');
-      if (splash && !splash.hidden && !doigt.ouverture) {
+      if (document.documentElement.classList.contains('ouverture') && !doigt.ouverture) {
         if (!doigt.attend && CO.on) { doigt.attend = true; CO.on('ouverture', () => { doigt.ouverture = true; doigtGuetter(); }); }
         return;
       }
