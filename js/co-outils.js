@@ -22,7 +22,7 @@
                                               canvas opaque ; l'encombrement est posé par co-etabli.js)
    CO.Outils.info(id)                       → { id, nom, dim, son, haut }
    Les textes dessinés (tapis, réglet, tickets, semelle) prennent les polices du site dans ses variables CSS
-   (--chiffres, sinon --sans ; --main pour l'écriture à la main).
+   (--chiffres, sinon --sans ; --stylo pour l'écriture à la main).
    ========================================================================== */
 (function () {
   'use strict';
@@ -38,7 +38,7 @@
      1. Outils communs
      ====================================================================== */
   /* polices (celles du site si elles sont là) */
-  /* les polices : celles du site, lues dans ses variables CSS (--chiffres, sinon --sans ; --main pour l'écriture
+  /* les polices : celles du site, lues dans ses variables CSS (--chiffres, sinon --sans ; --stylo pour l'écriture
      à la main), jamais écrites en dur ici — le site peut en changer. Relues à chaque modèle. */
   function famille(v, repli) {
     try {
@@ -54,11 +54,11 @@
   }
   const POLICE = {
     get chiffres() { return famille(['--chiffres', '--sans'], 'system-ui, sans-serif'); },
-    get main() { return famille(['--main', '--manuscrite'], 'cursive'); },
+    get stylo() { return famille(['--stylo'], 'cursive'); },
   };
   /** l'empreinte des polices (dans les clés du cache : si le site change de police, on recalcule) */
   function empreinteP() {
-    const t = POLICE.chiffres + '|' + POLICE.main;
+    const t = POLICE.chiffres + '|' + POLICE.stylo;
     let h = 0x811c9dc5;
     for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); }
     return (h >>> 0).toString(36);
@@ -68,7 +68,7 @@
   function* tuiles() {
     if (T.ok) return T;
     yield 'echauffer';
-    R.echauffer(['600 12px ' + POLICE.chiffres, '600 12px ' + POLICE.main]);
+    R.echauffer(['600 12px ' + POLICE.chiffres, '600 12px ' + POLICE.stylo]);
     yield;
     const plan = [
       ['a', () => R.tuileG(1, 8, 4)], // fbm général (motifs de 32 texels)
@@ -177,7 +177,7 @@
     // les polices du site (celles des variables CSS), aux graisses qu'on dessine, puis document.fonts.ready
     const faces = [];
     for (const w of ['500', '600', '700', '800']) faces.push(w + ' 12px ' + POLICE.chiffres);
-    faces.push('600 12px ' + POLICE.main, '700 12px ' + POLICE.main);
+    faces.push('600 12px ' + POLICE.stylo, '700 12px ' + POLICE.stylo);
     const charge = Promise.all(faces.map((f) => (document.fonts.load ? document.fonts.load(f).catch(() => null) : null)))
       .then(() => document.fonts.ready);
     yield Promise.race([charge, new Promise((r) => setTimeout(r, 1800))]);
@@ -547,7 +547,7 @@
           g.save();
           g.translate(tr.range(-hw * 0.8, hw * 0.8), tr.range(-hh * 0.8, hh * 0.8));
           g.rotate(tr.range(-0.5, 0.5));
-          g.font = '600 ' + tr.range(5, 8).toFixed(1) + 'px ' + POLICE.main;
+          g.font = '600 ' + tr.range(5, 8).toFixed(1) + 'px ' + POLICE.stylo;
           g.fillText(tr.pick(notes), 0, 0);
           g.restore();
         }
@@ -1246,11 +1246,11 @@
       });
       yield;
       const bleu = yield* R.masqueG([-28, -70, 28, 70], res, (g) => {
-        g.font = '600 5px ' + POLICE.main;
+        g.font = '600 5px ' + POLICE.stylo;
         g.textAlign = 'left';
         g.fillText(o.travail || 'talons + patins', -10.5, -7.8);
         g.fillText(o.prix || '30 €', -14, 0.4);
-        g.font = '600 4.6px ' + POLICE.main;
+        g.font = '600 4.6px ' + POLICE.stylo;
         g.fillText(o.date || 'mardi', -11, 8.3);
       });
       yield;

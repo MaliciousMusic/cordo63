@@ -7,8 +7,8 @@ ainsi que les licences de chaque famille (SIL OFL ; Apache 2.0 pour Ultra).
 Titres et interface : Bricolage Grotesque (variable : taille optique 12–96, largeur 75–100, graisse
 200–800) ; les titres la prennent serrée et grasse, comme une étiquette de boîte à sneakers.
 Chiffres, prix, numéros de ticket, panneaux : Big Shoulders (variable : taille optique, graisse).
-La voix de Clément dans les bulles : Shantell Sans (axes « informel » et « rebond »).
-Son écriture au stylo sur les tickets jaunes : Covered By Your Grace.
+L'écriture à la main (tickets jaunes, kraft, mots, ardoise) : Covered By Your Grace.
+La voix de Clément (ses bulles) et le nom brodé prennent la police de base.
 Le logo lui-même est vectorisé à part (tools/logo/), jamais composé en police.
 """
 import re
@@ -21,7 +21,6 @@ CSS = ROOT / "css" / "fonts.css"
 API = (
     "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800"
     "&family=Big+Shoulders:opsz,wght@10..72,100..900"
-    "&family=Shantell+Sans:wght,BNCE,INFM@300..800,-100..100,0..100"
     "&family=Covered+By+Your+Grace"
     "&display=swap"
 )
@@ -30,7 +29,6 @@ KEEP = {"latin", "latin-ext"}
 LICENSES = {
     "bricolage-grotesque": "https://raw.githubusercontent.com/google/fonts/main/ofl/bricolagegrotesque/OFL.txt",
     "big-shoulders": "https://raw.githubusercontent.com/google/fonts/main/ofl/bigshoulders/OFL.txt",
-    "shantell-sans": "https://raw.githubusercontent.com/google/fonts/main/ofl/shantellsans/OFL.txt",
     "covered-by-your-grace": "https://raw.githubusercontent.com/google/fonts/main/ofl/coveredbyyourgrace/OFL.txt",
 }
 

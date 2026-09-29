@@ -180,7 +180,7 @@
 
   /* ======================================================================
      3. La broderie : le nom en points de bourdon (satin) dans le cuir
-     Le nom est écrit (police --main, Shantell Sans, grasse) sur un calque de calcul ; des
+     Le nom est écrit (police de base --sans, Bricolage Grotesque, grasse) sur un calque de calcul ; des
      lignes de couture parallèles, penchées, le traversent : chaque passage dans une lettre
      est un point (fil tendu d'un bord à l'autre ; au-delà de 7 à 8 mm, le point est coupé en
      quinconce). Les points sont rangés lettre par lettre, en allers-retours, comme la
@@ -206,7 +206,7 @@
    * → { points: [{ x1, y1, x2, y2, l }], lettres, W, H }  (x, y en px CSS dans la boîte ; l : la lettre)
    */
   function geometrie(nom, W, H, o = {}) {
-    const fam = o.famille || var_('--main', "'Shantell Sans', cursive");
+    const fam = o.famille || var_('--sans', "'Bricolage Grotesque', sans-serif");
     const poids = o.poids || 800;
     const angle = (o.angle != null ? o.angle : 62) * Math.PI / 180; // la pente des points (depuis l'horizontale)
     const pas = o.pas || 0.6; // l'écart entre deux points (px CSS) : un bourdon serré
@@ -394,7 +394,7 @@
   async function broder(hote, nom, o = {}) {
     if (!hote) return;
     const fil = o.fil || 'jaune';
-    const fam = o.famille || var_('--main', "'Shantell Sans', cursive");
+    const fam = o.famille || var_('--sans', "'Bricolage Grotesque', sans-serif");
     await policePrete(fam, o.poids || 800, nom);
     const L = calques(hote);
     const jeton = (L.jeton = (L.jeton || 0) + 1); // (une nouvelle couture annule la précédente)

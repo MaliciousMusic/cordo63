@@ -257,7 +257,9 @@
     return jours;
   }
   const plage = (p) => (CO.fmtH ? CO.fmtH(p[0]) + '–' + CO.fmtH(p[1]) : '');
-  function feuilleHoraires(jours) {
+  /* chaque volet a son propre tableau, de lignes entières : du lundi au jeudi sur le premier, du vendredi
+     au dimanche et la pause de midi sur le second (aucune ligne ne tombe sur un pli) */
+  function tableHoraires(jours, legende) {
     const lignes = jours.map((x) => {
       const nom = CO.JOURS ? CO.JOURS[x.j] : '';
       const cls = [x.auj ? 'auj' : '', x.plages ? '' : 'ferme'].filter(Boolean).join(' ');
@@ -267,10 +269,12 @@
       else cases = `<td>${plage(x.plages[0])}</td><td>${x.plages.slice(1).map(plage).join(' · ')}</td>`;
       return `<tr${cls ? ` class="${cls}"` : ''}><th scope="row"><i class="pn-pastille" aria-hidden="true"></i><span aria-hidden="true">${JCOURT[x.j]}</span><span class="pn-lib">${nom}${x.auj ? ' (aujourd’hui)' : ''}</span></th>${cases}</tr>`;
     }).join('');
-    // la pause de midi, lue dans les horaires (le premier jour à deux plages)
+    return `<table class="pn-table"><caption class="pn-lib">${esc(legende)}</caption><tbody>${lignes}</tbody></table>`;
+  }
+  // la pause de midi, lue dans les horaires (le premier jour à deux plages)
+  function noteHoraires(jours) {
     const deux = jours.find((x) => x.plages && x.plages.length > 1);
-    const note = deux ? `pause déjeuner ${CO.fmtH(deux.plages[0][1])}–${CO.fmtH(deux.plages[1][0])}` : 'du mardi au samedi';
-    return `<table class="pn-table"><caption class="pn-lib">Horaires de la semaine</caption><tbody>${lignes}</tbody></table><p class="pn-note">${esc(note)}</p>`;
+    return deux ? `pause déjeuner ${CO.fmtH(deux.plages[0][1])}–${CO.fmtH(deux.plages[1][0])}` : 'du mardi au samedi';
   }
 
   /* ======================================================================
@@ -300,7 +304,7 @@
             </button>
             <div class="pn-volets" id="${u}volets" role="region" aria-label="Horaires, adresse et téléphone">
               <div class="pn-volet pn-v1"><div class="pn-face"><div class="pn-feuille"></div><i class="pn-voile-f" aria-hidden="true"></i></div><div class="pn-dos" aria-hidden="true"><i class="pn-voile-f"></i></div></div>
-              <div class="pn-volet pn-v2" aria-hidden="true"><div class="pn-face"><div class="pn-feuille pn-suite"></div><i class="pn-voile-f"></i></div><div class="pn-dos"><i class="pn-voile-f"></i></div></div>
+              <div class="pn-volet pn-v2"><div class="pn-face"><div class="pn-feuille"></div><i class="pn-voile-f" aria-hidden="true"></i></div><div class="pn-dos" aria-hidden="true"><i class="pn-voile-f"></i></div></div>
               <div class="pn-volet pn-v3"><div class="pn-face"><i class="pn-voile-f" aria-hidden="true"></i>
                 <p class="pn-adresse"><strong>${esc(S.adresse || '6 rue Verdier-Latour')}</strong><br>place du Mazet<br>${esc((S.cp || '63000') + ' ' + (S.ville || 'Clermont-Ferrand'))}</p>
                 <a class="pn-tel" href="tel:${esc(S.telIntl || '+33473246690')}" data-sfx="none"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 3.5h2.8l1.4 4.2-2 1.3a11 11 0 0 0 6.2 6.2l1.3-2 4.2 1.4v2.8a2 2 0 0 1-2.1 2A16 16 0 0 1 4.6 5.6a2 2 0 0 1 2-2.1z"/></svg><span><span class="pn-lib">Appeler le </span>${esc(S.tel || '04 73 24 66 90')}</span></a>
@@ -324,8 +328,6 @@
       voiles: [el.querySelector('.pn-face > .pn-voile-f'), el.querySelector('.pn-dos > .pn-voile-f')], ombre: [-1, -1],
       faces: [el.querySelector('.pn-face'), el.querySelector('.pn-dos')], vu: -1,
     }));
-    const v2 = volets[1].el;
-    if ('inert' in v2) v2.inert = true;
     if ('inert' in zone) zone.inert = true;
 
     /* ---------- tailles (le soulier suit la largeur de la vue) ---------- */
@@ -349,6 +351,7 @@
         c.hy = -120;
       });
       volets.forEach((f) => { f.h = f.el.offsetHeight; });
+      ajusterTables();
       ajusterLigne();
       appliquerCorps();
       appliquerVolets(T);
@@ -373,14 +376,26 @@
       const auj = (CO.parisNow ? CO.parisNow() : new Date()).toDateString();
       if (auj !== majJour) {
         majJour = auj;
-        const html = feuilleHoraires(semaine());
-        feuille.innerHTML = html;
-        suite.innerHTML = html;
-        suite.querySelectorAll('.pn-lib').forEach((e) => e.remove());
+        const jours = semaine();
+        feuille.innerHTML = tableHoraires(jours.slice(0, 4), 'Horaires de la semaine, du lundi au jeudi');
+        suite.innerHTML = tableHoraires(jours.slice(4), 'Horaires de la semaine, du vendredi au dimanche') + `<p class="pn-note">${esc(noteHoraires(jours))}</p>`;
+        ajusterTables();
       }
       nuit(opts.nuit != null ? !!opts.nuit : estNuit());
     }
     let majJour = null;
+    // les horaires tiennent dans la largeur du volet (une police de repli plus large, un petit écran) :
+    // le corps des deux tableaux se serre d'autant, ensemble
+    function ajusterTables() {
+      root.style.removeProperty('--pn-k');
+      let k = 1;
+      [feuille, suite].forEach((f) => {
+        const t = f.querySelector('.pn-table');
+        const libre = f.clientWidth - (parseFloat(getComputedStyle(f).paddingLeft) || 0) - (parseFloat(getComputedStyle(f).paddingRight) || 0);
+        if (t && libre > 0 && t.scrollWidth > libre) k = Math.min(k, libre / t.scrollWidth);
+      });
+      if (k < 1) root.style.setProperty('--pn-k', Math.max(0.7, k * 0.985).toFixed(3));
+    }
     // le grand mot tient dans le soulier (serré s'il le faut, une fois la police chargée)
     function ajusterMot() {
       textes.forEach((t) => { t.removeAttribute('textLength'); t.removeAttribute('lengthAdjust'); });

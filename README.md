@@ -18,11 +18,10 @@ Direction artistique, tirée de leur identité réelle :
 
 Couleurs : crème #FFF2E2, papier #F4EBDC, sauge #8A927B / #6E866A / #56705A, encre #2B2420, cuir #4A3122, ticket #F2D24B, pastille #E03A2E, tapis #2E5B4C, plan #1C4E86.
 
-Polices, toutes hébergées sur le site (`tools/fetch-fonts.py`) :
-- **Bricolage Grotesque** : les titres (serrée et grasse, comme une étiquette de boîte à sneakers) et le texte ;
-- **Big Shoulders** (`--chiffres`) : prix, numéros de ticket, panneaux ;
-- **Shantell Sans** (`--main`) : la voix de Clément dans ses bulles ;
-- **Covered By Your Grace** (`--stylo`) : son écriture au stylo sur les tickets.
+Polices, toutes hébergées sur le site (`tools/fetch-fonts.py`), trois familles et chacune son rôle :
+- **Bricolage Grotesque** (`--sans`, `--large`) : la police de base, partout (texte, boutons, bulles de Clément, nom brodé) ; les titres la prennent serrée et grasse, comme une étiquette de boîte à sneakers ;
+- **Big Shoulders** (`--chiffres`) : ce qui est imprimé ou peint : prix, numéros de ticket, enseigne, horaires, Dymo, lacets ;
+- **Covered By Your Grace** (`--stylo`) : ce qui est écrit à la main : tickets, étiquettes kraft, mots de Clément, ardoise, plans.
 
 ## Lancer en local
 

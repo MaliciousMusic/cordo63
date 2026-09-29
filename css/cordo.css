@@ -3,9 +3,12 @@
    La marque : le logo CORDO63 vert sauge sur crème, la devanture vert sauge aux lettres de bronze,
    l'enseigne en bois (une Air Jordan 1 sculptée). L'atelier : le tapis de découpe vert quadrillé sur
    l'établi en aggloméré brun, le cuir, l'acier des outils, le ticket de réparation jaune à pastille
-   rouge, les étiquettes kraft, les lacets. Polices : Bricolage Grotesque (titres serrés et gras comme
-   une étiquette de boîte à sneakers ; texte), Big Shoulders (chiffres, numéros, panneaux), Shantell Sans
-   (la voix de Clément dans les bulles) et Covered By Your Grace (son stylo sur les tickets).
+   rouge, les étiquettes kraft, les lacets. Polices : trois familles, chacune son rôle.
+     --sans / --large  Bricolage Grotesque, la police de base : tout le texte, les boutons, les bulles de
+                       Clément ; les titres la prennent serrée et grasse (une étiquette de boîte à sneakers)
+     --chiffres        Big Shoulders : ce qui est imprimé ou peint (prix, numéros de ticket, enseigne,
+                       horaires, Dymo, lacets)
+     --stylo           Covered By Your Grace : ce qui est écrit à la main (tickets, kraft, mots, ardoise)
    ========================================================================== */
 :root {
   --creme: #FFF2E2;
@@ -39,7 +42,6 @@
   --large: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --sans: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --chiffres: 'Big Shoulders', 'Arial Narrow', 'Roboto Condensed', sans-serif;
-  --main: 'Shantell Sans', 'Segoe Print', 'Bradley Hand', cursive;
   --stylo: 'Covered By Your Grace', 'Segoe Print', 'Bradley Hand', cursive;
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -90,26 +92,48 @@ svg use { pointer-events: none; }
 }
 .t-titre::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(86, 112, 90, .45), transparent); }
 
-/* ---------- boutons ---------- */
+/* ---------- boutons : des objets de l'atelier, qu'on enfonce ----------
+   Chacun a une épaisseur (--levre : le chant, dessous) qui s'écrase quand on appuie.
+     .btn-ticket  l'action principale : l'étiquette de réparation jaune (œillet, perforation, pastille rouge)
+     .btn-sauge   cuir vert sauge, surpiqué crème          .btn-noir   cuir noir, surpiqué jaune (sur le ticket)
+     .btn-ligne   papier cerné d'encre (le second choix)   .btn-craie  à la craie, sur le bois sombre
+   Tous : 48 px de haut au moins, la police de base, grasse. */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 46px; padding: 10px 20px; border-radius: 99px;
-  font-weight: 600; font-size: 14.5px; text-decoration: none; cursor: pointer; letter-spacing: .01em;
-  border: 1.5px solid transparent; transition: transform .15s ease, background .2s ease, box-shadow .2s ease;
+  --levre: rgba(43, 36, 32, .3);
+  --levre-h: 3px;
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 11px 22px; border-radius: 14px; border: 1.5px solid transparent;
+  font-family: var(--sans); font-weight: 700; font-size: 15px; line-height: 1.15; letter-spacing: .005em;
+  text-decoration: none; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 var(--levre-h) 0 var(--levre), 0 10px 18px -12px rgba(43, 36, 32, .75);
+  transition: transform .12s ease, box-shadow .12s ease, background .2s ease, color .2s ease, filter .2s ease;
 }
-.btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
-.btn:active { transform: scale(.97); }
-.btn[disabled] { opacity: .45; cursor: default; transform: none; }
+.btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.btn:active { transform: translateY(calc(var(--levre-h) - 1px)); box-shadow: 0 1px 0 var(--levre), 0 4px 10px -8px rgba(43, 36, 32, .75); }
+.btn:focus-visible { outline: 2.5px solid var(--encre); outline-offset: 3px; border-radius: 14px; }
+.btn[disabled] { cursor: default; transform: none; box-shadow: none; opacity: .5; filter: saturate(.5); }
 .btn-large { width: 100%; }
-.btn-sauge { background: var(--sauge-3); color: var(--creme); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 6px 16px -8px rgba(40, 60, 44, .8); }
-.btn-sauge:hover { background: #4B6450; }
-.btn-ligne { background: transparent; color: var(--encre); border-color: rgba(43, 36, 32, .55); }
-.btn-ligne:hover { background: rgba(43, 36, 32, .05); }
-.btn-cuir { background: var(--cuir-fond); color: var(--fil); box-shadow: inset 0 0 0 2.5px rgba(0, 0, 0, .2), inset 0 0 0 3.5px rgba(233, 217, 182, .0), 0 6px 16px -8px rgba(30, 18, 10, .8); }
-/* le bouton-ticket : une étiquette de réparation jaune, son œillet, sa pastille rouge */
+/* la surpiqûre des boutons de cuir */
+.btn-sauge::after, .btn-noir::after, .btn-cuir::after {
+  content: ''; position: absolute; inset: 4px; border: 1.3px dashed var(--piqure); border-radius: 10px; pointer-events: none;
+}
+.btn-sauge { --levre: #3A4E3E; --piqure: rgba(255, 242, 226, .5); background: linear-gradient(180deg, #688469, var(--sauge-3)); color: var(--creme); }
+.btn-sauge:hover { background: linear-gradient(180deg, #6F8D71, #5B765F); }
+.btn-noir { --levre: #0E0A08; --piqure: rgba(242, 210, 75, .42); background: linear-gradient(180deg, #3B312B, #241D19); color: var(--ticket-3); }
+.btn-noir:hover { background: linear-gradient(180deg, #463A32, #2C231F); }
+.btn-cuir { --levre: #1E130C; --piqure: rgba(233, 217, 182, .5); background: var(--cuir-fond); color: var(--fil); }
+.btn-ligne { --levre: rgba(43, 36, 32, .28); background: linear-gradient(180deg, #FFFBF3, #FBF1E1); color: var(--encre); border-color: rgba(43, 36, 32, .5); }
+.btn-ligne:hover { background: #FFFDF8; border-color: rgba(43, 36, 32, .7); }
+/* pas encore possible (« Continuer » tant que rien n'est choisi) : une place en pointillés, en attente */
+.btn-noir[disabled], .btn-sauge[disabled] { opacity: 1; filter: none; background: rgba(255, 255, 255, .14); color: rgba(42, 35, 16, .5); border: 1.5px dashed rgba(42, 35, 16, .38); }
+.btn-noir[disabled]::after, .btn-sauge[disabled]::after { display: none; }
+/* le bouton-ticket : une étiquette de réparation jaune, son œillet, sa perforation, sa pastille rouge */
 .btn-ticket {
-  position: relative; background: linear-gradient(180deg, #F7DC5E, var(--ticket)); color: var(--encre); border-radius: 6px 14px 14px 6px;
-  padding-left: 34px; font-weight: 700; box-shadow: inset 0 -2px 0 rgba(160, 120, 10, .25), 0 8px 18px -10px rgba(120, 90, 0, .9);
+  --levre: #B8921B;
+  background:
+    radial-gradient(circle, rgba(128, 96, 12, .38) 0 .9px, transparent 1.3px) 29px 50% / 3px 5px repeat-y,
+    linear-gradient(180deg, #F8DE62, var(--ticket));
+  color: var(--encre); border-radius: 6px 14px 14px 6px; padding-left: 40px;
 }
 .btn-ticket::before { /* l'œillet, cerclé de métal */
   content: ''; position: absolute; left: 12px; top: 50%; width: 11px; height: 11px; margin-top: -5.5px; border-radius: 50%;
@@ -119,7 +143,11 @@ svg use { pointer-events: none; }
 .btn-ticket::after { /* la pastille rouge */
   content: ''; position: absolute; right: 9px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--pastille); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .2);
 }
-.btn-ticket:hover { background: linear-gradient(180deg, #F9E271, #F4D650); }
+.btn-ticket:hover {
+  background:
+    radial-gradient(circle, rgba(128, 96, 12, .38) 0 .9px, transparent 1.3px) 29px 50% / 3px 5px repeat-y,
+    linear-gradient(180deg, #FAE473, #F4D650);
+}
 .lien { display: inline-flex; align-items: center; gap: 5px; color: var(--sauge-3); font-weight: 600; text-decoration: none; }
 .lien svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -245,7 +273,7 @@ main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b)
 .h-accueil { position: relative; margin: -44px 0 12px; text-align: center; font-weight: 400; }
 .h1-logo { display: block; width: var(--logo-l); margin: 0 auto; color: var(--sauge); }
 .h1-logo svg { width: 100%; height: auto; overflow: visible; }
-.h1-sous { display: block; margin-top: 7px; font-family: var(--chiffres); font-weight: 600; font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: #6F7766; }
+.h1-sous { display: block; margin-top: 8px; font-family: var(--sans); font-weight: 600; font-size: 11.5px; letter-spacing: .2em; text-transform: uppercase; color: #6F7766; }
 .intro { text-align: center; color: var(--encre-2); margin: 0 auto 18px; max-width: 34ch; font-size: 14.5px; }
 .intro strong { color: var(--encre); font-weight: 600; }
 
@@ -333,10 +361,12 @@ main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b)
 }
 .rubriques::-webkit-scrollbar { display: none; }
 .rub-chip {
-  flex: none; border: 1.2px solid rgba(43, 36, 32, .3); background: transparent; border-radius: 99px; padding: 6px 13px; font-size: 13px; font-weight: 600;
-  color: var(--encre-2); cursor: pointer; white-space: nowrap;
+  flex: none; min-height: 34px; margin-bottom: 2px; padding: 6px 14px; border: 1.5px solid rgba(43, 36, 32, .28); border-radius: 99px; cursor: pointer; white-space: nowrap;
+  background: linear-gradient(180deg, #FFFBF3, #F8EEDD); color: var(--encre-2); font-family: var(--sans); font-size: 13.5px; font-weight: 650;
+  box-shadow: 0 2px 0 rgba(43, 36, 32, .16); transition: transform .12s ease, box-shadow .12s ease, background .2s ease, color .2s ease;
 }
-.rub-chip.on { background: var(--encre); border-color: var(--encre); color: var(--creme); }
+.rub-chip:active { transform: translateY(1.5px); box-shadow: 0 .5px 0 rgba(43, 36, 32, .16); }
+.rub-chip.on { background: linear-gradient(180deg, #3B312B, var(--encre)); border-color: var(--encre); color: var(--ticket-3); box-shadow: 0 2px 0 #0E0A08; }
 .services { max-width: 600px; margin: 0 auto; padding: 4px 16px 0; }
 .rubrique { margin: 10px 0 26px; scroll-margin-top: 56px; }
 .rub-titre { font-family: var(--large); font-stretch: 75%; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; font-size: 18px; color: var(--sauge-3); margin: 0 0 8px; }
@@ -414,13 +444,13 @@ main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b)
 .objets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .objet {
   display: flex; align-items: center; gap: 8px; padding: 9px 9px; border: 0; border-radius: 10px; cursor: pointer; text-align: left; min-width: 0;
-  background: rgba(255, 255, 255, .5); box-shadow: inset 0 0 0 1.2px rgba(90, 70, 10, .22); font-weight: 650; font-size: 13.5px; font-stretch: 86%; line-height: 1.15; color: #2A2310;
-  hyphens: manual; overflow-wrap: normal;
-  transition: transform .15s ease, background .2s ease;
+  background: rgba(255, 255, 255, .5); box-shadow: inset 0 0 0 1.2px rgba(90, 70, 10, .22), 0 2px 0 rgba(120, 92, 10, .28); font-weight: 650; font-size: 13.5px; font-stretch: 86%; line-height: 1.15; color: #2A2310;
+  hyphens: manual; overflow-wrap: normal; touch-action: manipulation;
+  transition: transform .12s ease, background .2s ease, box-shadow .12s ease;
 }
 .objet svg { width: 28px; height: 28px; flex: none; fill: none; stroke: #2A2310; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
-.objet:active { transform: scale(.97); }
-.objet.on { background: #2A2310; color: var(--ticket-3); box-shadow: none; }
+.objet:active { transform: translateY(1.5px); box-shadow: inset 0 0 0 1.2px rgba(90, 70, 10, .22), 0 .5px 0 rgba(120, 92, 10, .28); }
+.objet.on { background: linear-gradient(180deg, #3B312B, #241D19); color: var(--ticket-3); box-shadow: 0 2px 0 #0E0A08; transform: translateY(1px); }
 .objet.on svg { stroke: var(--ticket-3); }
 .choix { display: flex; flex-direction: column; gap: 7px; }
 .choix-l {
@@ -471,9 +501,7 @@ main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b)
 .creneaux .jour { flex: 1; }
 .etape-nav { display: flex; gap: 8px; margin-top: 18px; align-items: center; }
 .etape-nav .btn { flex: 1; }
-.btn-noir { background: #2A2310; color: var(--ticket-3); }
-.btn-noir:hover { background: #3A3218; }
-.btn-retour { flex: none !important; width: 46px; padding: 0; border-color: rgba(90, 70, 10, .45); color: #2A2310; }
+.btn-retour { flex: none !important; width: 48px; padding: 0; border-color: rgba(90, 70, 10, .45); color: #2A2310; }
 .recap-l { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px dashed rgba(90, 70, 10, .3); }
 .recap-l:last-child { border-bottom: 0; }
 .recap-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; padding-top: 8px; border-top: 2px solid rgba(90, 70, 10, .5); font-weight: 700; }
@@ -572,20 +600,29 @@ main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b)
 /* ======================================================================
    L'atelier : les bulles de Clément ; « Tout lire » (le process, l'histoire, les avis…)
    ====================================================================== */
+/* la bulle de Clément : une boîte de dialogue de jeu, en papier cerné d'encre, posée avec son épaisseur ;
+   son nom sur une étiquette de cuir sauge surpiquée ; le ▼ rouge qui sautille quand la page est lue */
 .bulle {
-  position: absolute; left: 12px; right: 12px; bottom: calc(12px + var(--sous-barre)); z-index: 3; padding: 13px 16px 16px; border-radius: 14px;
-  background: rgba(255, 242, 226, .97); color: var(--encre); box-shadow: 0 10px 26px -10px rgba(0, 0, 0, .7), inset 0 0 0 2px rgba(43, 36, 32, .85);
+  position: absolute; left: 12px; right: 12px; bottom: calc(12px + var(--sous-barre)); z-index: 3; padding: 17px 18px 18px; border-radius: 18px;
+  background: var(--grain), linear-gradient(180deg, #FFFCF5, #FFF3E1); color: var(--encre); border: 2px solid var(--encre);
+  box-shadow: 0 4px 0 rgba(43, 36, 32, .92), 0 18px 30px -14px rgba(0, 0, 0, .8);
 }
 .bulle[hidden] { display: none; }
 .bulle-nom {
-  position: absolute; left: 14px; top: -13px; padding: 3px 11px; border-radius: 6px; background: var(--sauge-3); color: var(--creme);
-  font-family: var(--chiffres); font-weight: 800; font-size: 13px; letter-spacing: .14em; text-transform: uppercase;
+  position: absolute; left: 16px; top: -15px; padding: 4px 12px 3px; border-radius: 8px; border: 2px solid var(--encre);
+  background: linear-gradient(180deg, #688469, var(--sauge-3)); color: var(--creme); transform: rotate(-2deg);
+  font-family: var(--large); font-stretch: 75%; font-weight: 800; font-size: 13.5px; line-height: 1.2; letter-spacing: .1em; text-transform: uppercase;
+  box-shadow: 0 2px 0 rgba(43, 36, 32, .92), inset 0 0 0 2px rgba(86, 112, 90, 1), inset 0 0 0 3px rgba(255, 242, 226, .38);
 }
-.bulle-texte { margin: 2px 0 0; font-family: var(--main); font-variation-settings: 'INFM' 55, 'BNCE' 15; font-size: 15.5px; line-height: 1.45; min-height: 2.9em; }
+.bulle-texte { margin: 2px 0 0; font-family: var(--sans); font-weight: 500; font-size: 16px; line-height: 1.45; letter-spacing: .003em; min-height: 2.9em; text-wrap: pretty; }
 .bulle-texte .l { opacity: 0; }
 .bulle-texte .l.vu { opacity: 1; }
-.bulle-suite { position: absolute; right: 12px; bottom: 5px; font-size: 11px; color: var(--pastille); opacity: 0; }
-.bulle.finie .bulle-suite { opacity: 1; animation: pulse 1s ease-in-out infinite; }
+.bulle-suite { /* ▼ : un triangle rouge, pas un caractère (il ne dépend d'aucune police) */
+  position: absolute; right: 16px; bottom: 9px; width: 0; height: 0; overflow: hidden; font-size: 0; opacity: 0;
+  border-style: solid; border-width: 8px 6px 0; border-color: var(--pastille) transparent transparent;
+}
+.bulle.finie .bulle-suite { opacity: 1; animation: bulle-suite .9s ease-in-out infinite; }
+@keyframes bulle-suite { 50% { transform: translateY(3px); } }
 .process { list-style: none; margin: 4px 0 28px; padding: 0; display: grid; gap: 10px; }
 .etape { position: relative; padding: 12px 14px 12px 56px; border-radius: 12px; background: rgba(255, 250, 240, .66); box-shadow: inset 0 0 0 1px rgba(43, 36, 32, .08); transition: background .3s ease, box-shadow .3s ease; }
 .etape.ici { background: #FFF6CC; box-shadow: inset 0 0 0 1.5px var(--ticket-2); }
@@ -744,7 +781,7 @@ main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b)
 .panneau-host > * { pointer-events: auto; }
 .panneau-repli {
   position: absolute; top: 8px; left: 50%; transform: translateX(-50%); margin: 0; white-space: nowrap; padding: 6px 14px; border-radius: 99px;
-  background: rgba(43, 36, 32, .82); color: var(--creme); font-family: var(--chiffres); font-weight: 700; letter-spacing: .06em; font-size: 13px;
+  background: rgba(43, 36, 32, .82); color: var(--creme); font-family: var(--sans); font-weight: 650; letter-spacing: .01em; font-size: 13px;
 }
 .lacets { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 6px 0 20px; }
 .lacet-repli {
@@ -769,18 +806,30 @@ main.fondu .view { transform: none !important; transition: opacity .5s ease !imp
     linear-gradient(180deg, #6D6457 0 58%, #5A3E2B 58% 64%, #3A2A20 64%);
 }
 .boutique-haut { position: absolute; left: 10px; right: 10px; top: 10px; z-index: 6; display: flex; justify-content: space-between; pointer-events: none; }
+/* une étiquette de papier cernée d'encre, son icône dans une pastille noire ; elle s'enfonce comme les autres boutons */
 .boutique-btn {
-  pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px 0 11px; border: 0; border-radius: 99px; cursor: pointer;
-  background: rgba(255, 242, 226, .93); color: var(--encre); font-family: var(--chiffres); font-weight: 800; font-size: 14.5px; letter-spacing: .08em; text-transform: uppercase;
-  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .75), inset 0 0 0 1.5px rgba(43, 36, 32, .12); -webkit-tap-highlight-color: transparent; transition: transform .15s ease;
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 15px 0 6px; border: 2px solid var(--encre); border-radius: 99px; cursor: pointer;
+  background: linear-gradient(180deg, #FFFCF5, #F6EAD5); color: var(--encre); font-family: var(--sans); font-weight: 700; font-size: 14px; letter-spacing: .01em;
+  box-shadow: 0 3px 0 rgba(20, 13, 8, .92), 0 12px 20px -12px rgba(0, 0, 0, .9); -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
-.boutique-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.boutique-btn:active { transform: scale(.95); }
+.boutique-btn svg {
+  width: 28px; height: 28px; padding: 6px; border-radius: 50%; background: var(--encre); color: var(--creme);
+  fill: none; stroke: currentColor; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; flex: none;
+}
+.boutique-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(20, 13, 8, .92), 0 6px 12px -10px rgba(0, 0, 0, .9); }
+.boutique-btn:focus-visible { outline: 2.5px solid var(--ticket); outline-offset: 3px; border-radius: 99px; }
 .boutique-parler {
-  position: absolute; left: 50%; bottom: calc(18px + var(--sous-barre)); z-index: 5; transform: translateX(-50%); border: 0; cursor: pointer; white-space: nowrap;
-  padding: 9px 16px; border-radius: 99px; background: rgba(43, 36, 32, .84); color: var(--creme); font-size: 13.5px; font-weight: 600;
-  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, .8); opacity: 0; pointer-events: none; transition: opacity .5s ease;
+  position: absolute; left: 50%; bottom: calc(18px + var(--sous-barre)); z-index: 5; transform: translateX(-50%); cursor: pointer; white-space: nowrap;
+  padding: 9px 16px; border: 2px solid var(--encre); border-radius: 16px; background: linear-gradient(180deg, #FFFCF5, #FFF3E1); color: var(--encre);
+  font-family: var(--sans); font-size: 14px; font-weight: 700;
+  box-shadow: 0 3px 0 rgba(20, 13, 8, .92), 0 12px 22px -12px rgba(0, 0, 0, .9); opacity: 0; pointer-events: none; transition: opacity .5s ease;
 }
+.boutique-parler::before, .boutique-parler::after { /* la queue de la bulle, vers Clément */
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%); clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.boutique-parler::before { top: -13px; width: 22px; height: 12px; background: var(--encre); }
+.boutique-parler::after { top: -9px; width: 15px; height: 10px; background: #FFFCF5; }
 .boutique-parler.on { opacity: 1; pointer-events: auto; animation: parler 2.4s ease-in-out infinite; }
 .boutique-parler:focus-visible { opacity: 1; pointer-events: auto; }
 .dlg-ouvert .boutique-parler { opacity: 0; pointer-events: none; animation: none; }
@@ -792,24 +841,32 @@ main.fondu .view { transform: none !important; transition: opacity .5s ease !imp
 }
 .dialogue.on { opacity: 1; transform: none; }
 .dialogue[hidden] { display: none; }
-.bulle.bulle-dlg { position: relative; left: auto; right: auto; bottom: auto; padding: 15px 38px 18px 16px; cursor: pointer; }
-.bulle-dlg::before, .bulle-dlg::after { content: ''; position: absolute; left: var(--queue-x, 60%); transform: translateX(-50%); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-.bulle-dlg::before { top: -15px; width: 26px; height: 16px; background: rgba(43, 36, 32, .85); }
-.bulle-dlg::after { top: -11px; width: 19px; height: 13px; background: rgb(255, 242, 226); }
-.bulle-dlg.nom-droite .bulle-nom { left: auto; right: 14px; }
-.dlg-fermer { position: absolute; top: 5px; right: 5px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; cursor: pointer; display: grid; place-items: center; color: var(--encre-3); }
-.dlg-fermer svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
-.dlg-choix { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.bulle.bulle-dlg { position: relative; left: auto; right: auto; bottom: auto; padding: 17px 42px 20px 18px; cursor: pointer; }
+.bulle-dlg::before, .bulle-dlg::after { /* la queue : cernée d'encre, elle monte vers la tête de Clément (--queue-x, posé par le JS) */
+  content: ''; position: absolute; left: var(--queue-x, 60%); transform: translateX(-50%); clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.bulle-dlg::before { top: -19px; width: 30px; height: 19px; background: var(--encre); }
+.bulle-dlg::after { top: -14px; width: 21px; height: 16px; background: #FFFCF5; }
+.bulle-dlg.nom-droite .bulle-nom { left: auto; right: 16px; transform: rotate(2deg); }
+.dlg-fermer {
+  position: absolute; top: 7px; right: 7px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: rgba(43, 36, 32, .07); cursor: pointer;
+  display: grid; place-items: center; color: var(--encre-2); transition: background .2s ease;
+}
+.dlg-fermer:hover { background: rgba(43, 36, 32, .13); }
+.dlg-fermer svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+/* nos réponses : des bulles jaunes (la couleur de notre ticket), queue en bas à droite, rangées à droite */
+.dlg-choix { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px 6px; padding-left: 14px; }
 .dlg-choix:empty { display: none; }
 .dlg-rep {
-  display: inline-flex; align-items: center; min-height: 36px; padding: 7px 14px; border: 0; border-radius: 18px 18px 5px 18px; cursor: pointer; text-decoration: none;
-  background: var(--ticket); color: #2A2310; font-family: var(--sans); font-weight: 650; font-size: 14px; line-height: 1.15; text-align: left;
-  box-shadow: 0 6px 14px -8px rgba(0, 0, 0, .75), inset 0 -2px 0 rgba(0, 0, 0, .12);
-  opacity: 0; transform: translateY(8px) scale(.96);
-  transition: opacity .22s ease calc(var(--k, 0) * 40ms), transform .3s cubic-bezier(.2, .9, .3, 1.3) calc(var(--k, 0) * 40ms);
+  display: inline-flex; align-items: center; min-height: 38px; padding: 7px 13px; border: 2px solid var(--encre); border-radius: 17px 17px 5px 17px; cursor: pointer; text-decoration: none;
+  background: linear-gradient(180deg, #F8DE62, var(--ticket)); color: #241C0E; font-family: var(--sans); font-weight: 700; font-size: 14px; line-height: 1.15; text-align: left;
+  box-shadow: 0 3px 0 rgba(20, 13, 8, .92), 0 12px 18px -12px rgba(0, 0, 0, .9); touch-action: manipulation;
+  opacity: 0; transform: translateY(10px) scale(.94);
+  transition: opacity .22s ease calc(var(--k, 0) * 45ms), transform .32s cubic-bezier(.2, .9, .3, 1.35) calc(var(--k, 0) * 45ms), box-shadow .12s ease;
 }
 .dlg-choix.on .dlg-rep { opacity: 1; transform: none; }
-.dlg-rep:active { transform: scale(.95); }
+.dlg-choix.on .dlg-rep:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(20, 13, 8, .92), 0 6px 12px -10px rgba(0, 0, 0, .9); transition-delay: 0s; }
+.dlg-rep:focus-visible { outline: 2.5px solid var(--creme); outline-offset: 3px; }
 .dlg-rep[href]::after { content: '↗'; margin-left: 6px; font-size: 12px; opacity: .6; }
 .dlg-rep[href^="tel:"]::after { content: ''; margin: 0; }
 
@@ -824,7 +881,7 @@ main.fondu .view { transform: none !important; transition: opacity .5s ease !imp
 .film-etapes li.ici { background: var(--ticket); }
 .film-etapes b { display: none; }
 .film-etapes span {
-  position: absolute; left: 0; top: 11px; white-space: nowrap; font-family: var(--chiffres); font-weight: 800; font-size: 15px; letter-spacing: .08em; text-transform: uppercase;
+  position: absolute; left: 0; top: 11px; white-space: nowrap; font-family: var(--large); font-stretch: 75%; font-weight: 800; font-size: 15px; letter-spacing: .06em; text-transform: uppercase;
   color: var(--creme); text-shadow: 0 1px 6px rgba(0, 0, 0, .6); opacity: 0; transition: opacity .3s ease;
 }
 .film-etapes li.ici span { opacity: 1; }
