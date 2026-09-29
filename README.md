@@ -7,10 +7,10 @@ Le site de la cordonnerie de **Clément Petit**, place du Mazet à Clermont-Ferr
 Direction artistique, tirée de leur identité réelle :
 - **le logo CORDO63** (grotesque très large et fine, vert sauge #8A927B sur crème #FFF2E2), reconstruit en tracés d'après leur avatar Instagram (`tools/logo/`) ; **le logo de l'appli** : CORDO63 en noir sur crème, un lacet rouge qui passe dessus, dessous, entre les lettres (`assets/brand/logo-cordo63-lacet.svg`, les icônes, le favicon « 63 ») ;
 - **la devanture** d'après la vue de la rue : l'immeuble d'angle (la rue d'à côté en simple tranche au bord gauche), l'enduit crème, la pierre de Volvic, les volets sauge, le bandeau vert clair aux lettres dorées « CORDONNERIE », et derrière la vitre l'atelier éclairé où Clément travaille ;
-- **l'enseigne** : leur Air Jordan 1 sculptée dans le bois, en 3D temps réel. Le cadre d'acier est fixé au bandeau ; la chaussure tourne doucement sur sa broche (un tour en 14 s), et on peut la relancer du doigt ;
+- **l'enseigne** : leur Air Jordan 1 sculptée dans le bois, un modèle 3D rendu une fois pour toutes en images (48 poses sur un tour, de jour et de nuit : rien à calculer sur le téléphone). Le cadre d'acier est fixé au bandeau ; la chaussure tourne doucement sur sa broche (un tour en 14 s), et on peut la relancer du doigt ;
 - **l'enseigne-soulier** en tête de l'accueil : une derby en tôle peinte sauge bordée d'or, pendue à deux chaînes, OUVERT / FERMÉ / PAUSE ; on la touche, elle déplie les horaires en accordéon ;
 - **les lacets** : les accès rapides sous le logo sont des lacets plats tressés, en bandeaux ondulés ; on en touche un, il se tend, file hors de l'écran, puis le lien s'ouvre ;
-- **l'établi vu de dessus** comme sur ses photos Instagram : le tapis de découpe vert usé (coupes, colle, teintures) sur l'aggloméré brun, les coins encombrés (pots de colle, fil, tasse, crayons, téléphone…), les outils rangés au cordeau au centre, en rendu réaliste calculé pixel par pixel ;
+- **l'établi vu de dessus** comme sur ses photos Instagram : le tapis de découpe vert usé (coupes, colle, teintures) sur l'aggloméré brun, les coins encombrés (pots de colle, fil, tasse, crayons, téléphone…), en rendu réaliste calculé pixel par pixel une fois pour toutes (une image), et les outils des réparations choisies rangés au cordeau au centre ;
 - **les plans** : chaque réparation du catalogue a son plan bleu (blueprint) animé qui montre ce qu'on fait ;
 - **la boutique de l'intérieur** : Clément redessiné d'après ses photos (barbe, lunettes transparentes, tablier en toile, avant-bras tatoué, montre à bracelet orange), au travail à ses machines ;
 - **le ticket de réparation jaune à pastille rouge** (on le voit sur ses photos) : c'est la commande, le suivi, le bouton principal ;
@@ -18,11 +18,10 @@ Direction artistique, tirée de leur identité réelle :
 
 Couleurs : crème #FFF2E2, papier #F4EBDC, sauge #8A927B / #6E866A / #56705A, encre #2B2420, cuir #4A3122, ticket #F2D24B, pastille #E03A2E, tapis #2E5B4C, plan #1C4E86.
 
-Polices, toutes hébergées sur le site (`tools/fetch-fonts.py`) :
-- **Bricolage Grotesque** : les titres (serrée et grasse, comme une étiquette de boîte à sneakers) et le texte ;
-- **Big Shoulders** (`--chiffres`) : prix, numéros de ticket, panneaux ;
-- **Shantell Sans** (`--main`) : la voix de Clément dans ses bulles ;
-- **Covered By Your Grace** (`--stylo`) : son écriture au stylo sur les tickets.
+Polices, toutes hébergées sur le site (`tools/fetch-fonts.py`), trois familles et chacune son rôle :
+- **Bricolage Grotesque** (`--sans`, `--large`) : la police de base, partout (texte, boutons, bulles de Clément, nom brodé) ; les titres la prennent serrée et grasse, comme une étiquette de boîte à sneakers ;
+- **Big Shoulders** (`--chiffres`) : ce qui est imprimé ou peint : prix, numéros de ticket, enseigne, horaires, Dymo, lacets ;
+- **Covered By Your Grace** (`--stylo`) : ce qui est écrit à la main : tickets, étiquettes kraft, mots de Clément, ardoise, plans.
 
 ## Lancer en local
 
@@ -34,7 +33,7 @@ Puis http://localhost:5193 (serveur sans cache). Un double-clic sur `index.html`
 
 | Adresse | Effet |
 |---|---|
-| `?intro` | rejoue l'ouverture (une fois par visite sinon) · `?nointro` la saute |
+| `?intro` | rejoue l'ouverture, qui est aussi l'écran de chargement (une fois par visite sinon) · `?nointro` la saute |
 | `?soir` · `?jour` | force l'éclairage du soir ou du jour (sinon : l'heure de Paris et le coucher du soleil) |
 | `?ouvert` | montre la boutique ouverte quel que soit le moment (démo un lundi) |
 | `?atelier` | ouvre l'espace atelier (code demandé) |
@@ -75,7 +74,8 @@ js/co-core.js             hasard seedé, bruit, maths, couleurs, SVG, stockage, 
 js/co-data.js             LA source : la boutique, les horaires, les services et prix, les étapes, l'histoire, la FAQ
 js/co-brand.js            le logo CORDO63 en tracés, lettre par lettre (généré par tools/logo/build.py)
 js/co-facade.js           la devanture (SVG dessiné en JS), la caméra qui entre par la porte
-js/co-jordan.js           l'enseigne : l'Air Jordan 1 sculptée dans le bois, en WebGL (modèle et bois procéduraux)
+js/co-enseigne.js         l'enseigne dans l'appli : les planches d'images de la Jordan (assets/img/enseigne-*.webp), feuilletées
+js/co-jordan.js           le modèle 3D de l'enseigne, en WebGL (modèle et bois procéduraux) : le labo et l'outil qui le rend en images
 js/co-panneau.js          l'enseigne-soulier : statut, horaires qui se déplient
 js/co-lacets.js           les lacets : dessin tressé, tirage hors de l'écran, retour ; le logo au lacet (CO.Lacets.logo)
 js/co-rendu.js            la lumière commune des objets vus de dessus (calcul pixel par pixel, cache IndexedDB)
@@ -87,7 +87,8 @@ js/co-ticket.js           le ticket jaune : en-tête, souche, détail, QR, tampo
 js/co-services.js         L'établi : grille, sélection, devis, outils posés, vignettes des plans
 js/co-deposer.js          Déposer : le ticket étape par étape, l'envoi
 js/co-suivi.js            Mes tickets : souches, avancement, pastille, feuille d'un ticket
-js/co-compte.js           le compte (nom, téléphone), la fiche, le nom cousu sous CORDO63
+js/co-compte.js           le compte (nom, téléphone), la fiche, le nom cousu sous CORDO63 (la broderie : un nom ou une forme)
+js/co-onglets.js          la barre des onglets brodée : les icônes cousues au fil, à la fin de l'ouverture
 js/co-clous.js            la carte à clous et le code de l'atelier (pavé, SHA-256)
 js/co-clouage.js          les mains de Clément qui plantent les clous, les têtes de clous
 js/co-pro.js              l'espace atelier de Clément
@@ -106,6 +107,7 @@ tools/build-pages.mjs     HTML statique (services, process, histoire, avis, hora
 tools/logo/               reconstruction du logo (fit.py → geo.py → build.py)
 tools/supabase/           le schéma de production du carnet de tickets (RLS, fonction de suivi)
 tools/render-assets.mjs   icônes d'appli et image de partage (Chrome sans tête, serveur local lancé)
+tools/render-images.mjs   les images pré-rendues : les planches de l'enseigne, le décor de l'établi (idem)
 tools/capture.mjs         capture d'écran d'une page locale
 tools/set-pin.mjs         changer le code de l'atelier
 tools/set-domain.mjs      mettre le vrai domaine partout
@@ -115,6 +117,7 @@ osint/                    le dossier d'enquête (non publié) : osint/00-SYNTHES
 
 Après une modification des services, des horaires ou de la FAQ : `node tools/build-pages.mjs`.
 Icônes et image de partage (serveur local lancé) : `node tools/render-assets.mjs`.
+Après une modification du modèle de l'enseigne (`js/co-jordan.js`) ou du décor de l'établi (`js/co-outils.js`, `js/co-etabli.js`) : `node tools/render-images.mjs` (serveur local lancé ; `enseigne` ou `etabli` pour n'en refaire qu'un).
 
 ## À confirmer avec Clément
 

@@ -2,7 +2,7 @@
    Cordo 63 — l'appli : onglets (#accueil, #services, #deposer, #tickets, #atelier),
    feuilles qui montent, son, « Ouvert / Fermé » à l'heure de Paris (l'enseigne-soulier en
    tête de l'accueil, la devanture), les lacets sous le logo, la devanture et son enseigne en
-   bois (la Jordan en 3D posée par-dessus) ; on touche la vitrine : la caméra entre dans la
+   bois (la Jordan, en images, posée par-dessus) ; on touche la vitrine : la caméra entre dans la
    boutique (l'onglet L'atelier), et en ressort par « La rue ».
    ========================================================================== */
 (function () {
@@ -225,7 +225,7 @@
   }
   CO.estNuit = isNight;
 
-  /* ---------- l'enseigne : la Jordan en bois (WebGL) posée sur la devanture ---------- */
+  /* ---------- l'enseigne : la Jordan en bois (ses images, js/co-enseigne.js) posée sur la devanture ---------- */
   function placerEnseigne() {
     const host = $('#enseigne-host'), zone = $('#enseigne-zone');
     if (!host || !facade || !facade.versEcran || !facade.zoneEnseigne) return;
@@ -247,10 +247,12 @@
   }
   async function initEnseigne() {
     const host = $('#enseigne-host');
-    if (!host || !CO.Jordan || !CO.Jordan.create || !facade) return null;
+    // l'enseigne en images (js/co-enseigne.js : le modèle 3D rendu une fois pour toutes) ; sinon le WebGL
+    const E = CO.Enseigne || CO.Jordan;
+    if (!host || !E || !E.create || !facade) return null;
     placerEnseigne();
     try {
-      jordan = await CO.Jordan.create(host, { mode: 'enseigne', pose: 'pointe', interactive: true, nuit: isNight() });
+      jordan = await E.create(host, { mode: 'enseigne', pose: 'pointe', interactive: true, nuit: isNight(), cache: true });
     } catch (e) {
       console.warn('enseigne', e);
       return null;
@@ -381,17 +383,28 @@
     initHours();
     initLacets();
     try { initBureau(); } catch (e) { console.warn('bureau', e); }
-    ['Commandes', 'Suivi', 'Services', 'Deposer', 'Clous', 'Pro', 'Nous', 'Film', 'Atelier'].forEach((m) => {
+    ['Onglets', 'Commandes', 'Suivi', 'Services', 'Deposer', 'Clous', 'Pro', 'Nous', 'Film', 'Atelier'].forEach((m) => {
       try { CO[m] && CO[m].init && CO[m].init(); } catch (e) { console.warn('module', m, e); }
     });
     route(true);
     CO.on('view', (v) => { if (v === 'accueil') revenirRue(); });
     const fac = initFacade();
-    const splash = CO.splash ? CO.splash() : Promise.resolve({ skipped: true });
+    // l'appli est chargée quand la page et ses ressources, ses polices et la devanture sont là : l'ouverture
+    // (l'écran de chargement) tourne jusque-là
+    const page = new Promise((r) => (document.readyState === 'complete' ? r() : window.addEventListener('load', r, { once: true })));
+    const polices = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    // les images pré-rendues : les planches de l'enseigne, le décor de l'établi
+    const images = [
+      CO.Enseigne && CO.Enseigne.precharger ? CO.Enseigne.precharger(isNight()) : null,
+      CO.Services && CO.Services.precharger ? CO.Services.precharger() : null,
+    ].map((p) => (p ? p.catch(() => null) : null));
+    const pret = Promise.all([fac, page, polices, ...images]).catch(() => {});
+    const splash = CO.splash ? CO.splash({ pret }) : Promise.resolve({ skipped: true });
+    // l'enseigne se pose dès que la devanture est là (cachée : elle entre en scène une fois l'appli dévoilée)
+    const ens = fac.then((f) => (f ? initEnseigne() : null));
     const [f, sp] = await Promise.all([fac, splash]);
     // « l'appli est dévoilée » : les calculs lourds des autres onglets attendent ce signal (l'ouverture l'émet elle-même)
     if (!sp || !sp.revele) CO.emit('ouverture', sp || { skipped: true });
-    const ens = f ? initEnseigne() : Promise.resolve(null);
     if (f) {
       // après l'ouverture aux lacets, la devanture est déjà là, allumée : on ne rejoue pas sa construction
       if (f.play && !(sp && (sp.revele || (sp.skipped && new URLSearchParams(location.search).has('fige'))))) await f.play();

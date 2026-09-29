@@ -11,7 +11,7 @@
    bleue, établi au tapis de découpe vert) et Clément qui frappe une semelle ; au coin, le poteau
    du sens interdit ; devant, l'ardoise « Déposez vos paires ! ».
    L'enseigne (la Jordan en bois dans son cadre d'acier, pointe en bas) est dessinée par un autre
-   module (WebGL) et posée par-dessus, au bout gauche du bandeau : on lui réserve sa place
+   module (js/co-enseigne.js, ses images) et posée par-dessus, au bout gauche du bandeau : on lui réserve sa place
    (zoneEnseigne), on dessine sa platine murale et son ombre portée (ombreEnseigne).
    Les calques, du fond vers l'avant :
      monde (ciel lointain, retour de l'angle, mur, devanture, trottoir) → voile du soir → lueurs
@@ -22,7 +22,7 @@
    sur les côtés ; sur un écran plus haut que la scène, c'est l'immeuble qui déborde en haut.
    Le haut de la scène (≈ 110 unités, 80 px) reste décoratif : l'enseigne des horaires de l'appli
    pend par-dessus.
-   Textes : jamais de famille de police en dur, les variables de l'appli (--large, --sans, --main,
+   Textes : jamais de famille de police en dur, les variables de l'appli (--large, --sans, --stylo,
    --chiffres) ; jamais de transformation CSS sur un <text> (Safari) : on anime leur <g>.
    ========================================================================== */
 (function () {
@@ -50,7 +50,7 @@
   const FONTE = {
     large: 'font-family:var(--large, system-ui, sans-serif)',
     sans: 'font-family:var(--sans, system-ui, sans-serif)',
-    main: 'font-family:var(--main, cursive)',
+    stylo: 'font-family:var(--stylo, cursive)',
     chiffres: "font-family:var(--chiffres, 'Arial Narrow', sans-serif)",
   };
 
@@ -220,7 +220,7 @@
     { // les polices de l'appli (par ses variables) : on attend un peu qu'elles arrivent, sinon repli
       const cs = getComputedStyle(host);
       const fam = (v) => (cs.getPropertyValue(v) || '').trim();
-      const charge = [['700', '--large'], ['600', '--sans'], ['400', '--main'], ['700', '--chiffres']]
+      const charge = [['700', '--large'], ['600', '--sans'], ['400', '--stylo'], ['700', '--chiffres']]
         .filter(([, v]) => fam(v)).map(([w, v]) => document.fonts.load(`${w} 12px ${fam(v)}`).catch(() => null));
       try { await Promise.race([Promise.all(charge), CO.wait(1200)]); } catch (e) { /* repli */ }
     }
@@ -1165,8 +1165,8 @@
       path(A, 'M-22 -108.5H22L25 -48H-25Z', lin([[0, '#fff', 0.07], [1, '#fff', 0]], { x2: 1, y2: 1 }));
       path(A, 'M-25 -112H25L25.4 -110H-25.4Z', '#D8AC7A');
       const craie = G(A, { fill: '#F2F0EA', 'text-anchor': 'middle' });
-      texte(craie, 'Déposez', 0, -93, 11.5, FONTE.main + ';font-weight:400');
-      texte(craie, 'vos paires !', 0, -79, 10.4, FONTE.main + ';font-weight:400');
+      texte(craie, 'Déposez', 0, -93, 11.5, FONTE.stylo + ';font-weight:400');
+      texte(craie, 'vos paires !', 0, -79, 10.4, FONTE.stylo + ';font-weight:400');
       // une basket à la craie, et une flèche vers la porte
       const b = [];
       b.push('M-13 -58Q-12.6 -66 -9 -67Q-6 -67.4 -4 -64Q2 -61 8 -60.4Q12.4 -60 12.6 -57.4Q12.4 -55.6 10 -55.6L-12 -55.6Q-13.2 -56 -13 -58Z');
@@ -1693,7 +1693,7 @@
           du <svg> : fluide pendant le mouvement, redessinée nette à l'arrivée. */
       camera(r, ms = 800) { return animerCamera(r || null, ms); },
       /** fn({ zoom, x, y }) à chaque image d'un mouvement de caméra (et quand l'hôte change de taille) : pour
-          que l'appli déplace avec elle ce qu'elle pose par-dessus (la Jordan en WebGL). Renvoie de quoi arrêter. */
+          que l'appli déplace avec elle ce qu'elle pose par-dessus (l'enseigne). Renvoie de quoi arrêter. */
       suivre(fn) { suiveurs.add(fn); return () => suiveurs.delete(fn); },
       /** Un rectangle de la scène → sa place en px dans l'hôte (cadrage et caméra compris, même en mouvement) */
       versEcran(r) {

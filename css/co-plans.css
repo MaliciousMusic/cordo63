@@ -41,4 +41,4 @@
 }
 .fp-desc { margin: 0 0 4px; color: var(--encre-2); font-size: 14px; line-height: 1.45; }
 .fp-meta { margin: 0 0 16px; font-size: 13px; font-weight: 600; color: var(--sauge-3); }
-.fp-meta b { font-family: var(--main); font-size: 22px; font-weight: 700; color: var(--encre); margin-right: 2px; }
+.fp-meta b { font-family: var(--chiffres); font-size: 22px; font-weight: 800; color: var(--encre); margin-right: 2px; }

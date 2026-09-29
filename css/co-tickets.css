@@ -59,7 +59,7 @@
 .planche::after { right: 12px; }
 
 .planche-mot { /* au crayon, sur le bois */
-  margin: 0 0 -3px; font-family: var(--main); font-weight: 400; font-size: 12.5px; line-height: 1; white-space: nowrap; color: rgba(52, 44, 38, .66);
+  margin: 0 0 -3px; font-family: var(--stylo); font-weight: 400; font-size: 15px; line-height: 1; white-space: nowrap; color: rgba(52, 44, 38, .66);
   transform: rotate(-2.5deg); text-shadow: 0 .5px 0 rgba(255, 236, 200, .25);
 }
 
@@ -188,7 +188,7 @@
 .accroche.vide { filter: drop-shadow(4px 8px 5px rgba(10, 5, 2, .5)); }
 .mot {
   position: relative; margin: 30px 2px 0 6px; padding: 14px 11px 12px; transform: rotate(-3deg);
-  font-family: var(--main); font-variation-settings: 'INFM' 60, 'BNCE' 20; font-size: 13.5px; line-height: 1.32; color: #2E2A33;
+  font-family: var(--stylo); font-size: 17px; line-height: 1.12; color: #2E2A33;
   background:
     linear-gradient(rgba(64, 104, 170, .14) 1px, transparent 1px) 0 6px / 100% 9px,
     linear-gradient(90deg, rgba(64, 104, 170, .14) 1px, transparent 1px) 5px 0 / 9px 100%,
@@ -305,8 +305,9 @@
 .clous-actions { position: relative; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 6px 18px 0; }
 .clous-actions .btn { min-height: 50px; }
 .clous-actions .btn[hidden] { display: none; }
-.btn-craie { background: rgba(255, 242, 226, .06); color: var(--creme); border-color: rgba(255, 242, 226, .5); }
-.btn-craie:hover { background: rgba(255, 242, 226, .12); }
+.btn-craie { --levre: rgba(10, 5, 2, .5); background: rgba(255, 242, 226, .07); color: var(--creme); border-color: rgba(255, 242, 226, .55); }
+.btn-craie:hover { background: rgba(255, 242, 226, .13); }
+.btn-craie:focus-visible { outline-color: var(--creme); }
 .clous-note { position: relative; z-index: 2; text-align: center; font-size: 12.5px; color: rgba(255, 242, 226, .66); margin: 12px 18px 0; }
 .clous-compte { position: relative; z-index: 2; display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 2px 8px; margin: 10px 18px 0; font-size: 12.5px; color: rgba(255, 242, 226, .78); text-align: center; }
 .clous-compte:empty { display: none; }
@@ -344,7 +345,7 @@
 .fiche-logo svg { width: 100%; height: auto; }
 .fiche-apercu {
   max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  font-family: var(--main); font-weight: 800; font-size: 21px; line-height: 1.15; color: #EEC53E;
+  font-family: var(--sans); font-weight: 800; font-size: 21px; line-height: 1.15; color: #EEC53E;
   text-shadow: 0 1px 0 rgba(90, 60, 8, .8), .6px 1.2px 1.5px rgba(10, 5, 2, .6);
 }
 .fiche-apercu.vide { font-family: var(--stylo); font-weight: 400; font-size: 19px; color: rgba(214, 210, 200, .55); text-shadow: none; border-bottom: 1.3px dashed rgba(233, 217, 182, .4); }

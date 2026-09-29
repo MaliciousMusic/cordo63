@@ -12,6 +12,8 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
+  // le décor de l'établi (le plateau, le tapis, ce qui traîne) : une image rendue une fois pour toutes (tools/render-images.mjs)
+  const FOND = 'assets/img/etabli-fond.webp';
   let choisis = new Set();
   let etabli = null, etabliPromesse = null;
   let etiquetteT = 0;
@@ -47,7 +49,7 @@
       host.style.background = 'linear-gradient(rgba(180,215,190,.22) 1px, transparent 1px) 0 0 / 100% 24px, linear-gradient(90deg, rgba(180,215,190,.22) 1px, transparent 1px) 0 0 / 24px 100%, radial-gradient(120% 90% at 40% 30%, #33634F, #244A3D)';
       return (etabliPromesse = Promise.resolve(null));
     }
-    etabliPromesse = CO.Etabli.create(host, { disposition: 'services', graine: 63 }).then((e) => {
+    etabliPromesse = CO.Etabli.create(host, { disposition: 'services', graine: 63, fondFige: FOND }).then((e) => {
       etabli = e;
       CO.etabli = e;
       if (e && e.on) e.on('tap', (id) => toucheObjet(id));
@@ -170,6 +172,15 @@
   }
 
   CO.Services = {
+    /** l'image du décor, chargée pendant l'ouverture (l'onglet s'ouvrira tout de suite) : → Promise */
+    precharger() {
+      return new Promise((res) => {
+        const im = new Image();
+        im.decoding = 'async';
+        im.onload = im.onerror = () => res(im);
+        im.src = FOND;
+      });
+    },
     init() {
       choisis = new Set((CO.store.get('devis', []) || []).filter((id) => CO.service(id)));
       $$('#liste-services .ligne').forEach((li) => {
@@ -221,7 +232,7 @@
         if (!CO.Etabli || !CO.Etabli.prechauffer) return;
         const main = document.getElementById('main');
         const w = main ? main.clientWidth : innerWidth, h = main ? main.clientHeight : innerHeight;
-        try { CO.Etabli.prechauffer({ largeur: w, hauteur: Math.round(CO.clamp(h * 0.46, 250, 520)), disposition: 'services', graine: 63 }); } catch (e) { /* rien */ }
+        try { CO.Etabli.prechauffer({ largeur: w, hauteur: Math.round(CO.clamp(h * 0.46, 250, 520)), disposition: 'services', graine: 63, fondFige: FOND }); } catch (e) { /* rien */ }
       }, 1200));
       // le ticket en cours de remplissage coche/décoche aussi ici
       CO.on('devis', (ids) => {

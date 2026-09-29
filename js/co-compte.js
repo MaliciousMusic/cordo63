@@ -13,7 +13,7 @@
    CO.Compte.oublier({ confirmer })   → bool : efface la fiche (après confirmation), le nom est décousu
    CO.Compte.ouvrir({ suite })        → Promise<compte | null> : la fiche (créer, ou modifier s'il y a un compte)
    CO.Compte.valider({ nom, tel })    → { nom?, tel? } les messages d'erreur
-   CO.Compte.broder(hote, nom, { anime, duree, surPoint }) → Promise : coud le nom dans hote (deux <canvas>)
+   CO.Compte.broder(hote, nom, { anime, duree, surPoint, fil, forme, muet }) → Promise : coud le nom (ou la forme) dans hote (deux <canvas>)
    CO.Compte.decoudre(hote)           → Promise : défait la couture, à l'envers, vite
    CO.on('compte', ({ compte, avant, raison }) => …)   raison : 'creer' | 'modifier' | 'oublier'
    ========================================================================== */
@@ -180,16 +180,20 @@
 
   /* ======================================================================
      3. La broderie : le nom en points de bourdon (satin) dans le cuir
-     Le nom est écrit (police --main, Shantell Sans, grasse) sur un calque de calcul ; des
+     Le nom est écrit (police de base --sans, Bricolage Grotesque, grasse) sur un calque de calcul ; des
      lignes de couture parallèles, penchées, le traversent : chaque passage dans une lettre
      est un point (fil tendu d'un bord à l'autre ; au-delà de 7 à 8 mm, le point est coupé en
      quinconce). Les points sont rangés lettre par lettre, en allers-retours, comme la
      machine les pique. Deux calques : dessous, l'ombre du fil et les trous d'aiguille ;
      dessus, le fil (un ton par point, son ombre propre, son reflet côté lumière).
+     La même machine coud aussi des formes (o.forme : les icônes brodées de la barre des onglets) :
+     un tracé SVG rempli, des traits épais, des jours découpés dedans.
      ====================================================================== */
   const FILS = {
     jaune: { base: [238, 197, 62], clair: [255, 247, 204], sombre: [128, 88, 14] },
     creme: { base: [236, 223, 190], clair: [255, 255, 250], sombre: [140, 122, 90] },
+    or: { base: [240, 203, 116], clair: [255, 246, 214], sombre: [124, 86, 30] },
+    encre: { base: [62, 46, 34], clair: [140, 116, 92], sombre: [18, 12, 8] },
   };
   const RES = 5; // px du calque de calcul par px CSS
   const cache = new Map(); // (nom, boîte) → géométrie
@@ -206,7 +210,7 @@
    * → { points: [{ x1, y1, x2, y2, l }], lettres, W, H }  (x, y en px CSS dans la boîte ; l : la lettre)
    */
   function geometrie(nom, W, H, o = {}) {
-    const fam = o.famille || var_('--main', "'Shantell Sans', cursive");
+    const fam = o.famille || var_('--sans', "'Bricolage Grotesque', sans-serif");
     const poids = o.poids || 800;
     const angle = (o.angle != null ? o.angle : 62) * Math.PI / 180; // la pente des points (depuis l'horizontale)
     const pas = o.pas || 0.6; // l'écart entre deux points (px CSS) : un bourdon serré
@@ -249,7 +253,50 @@
     for (let i = 0; i < lettres.length; i++) { bornes.push(x0 + g.measureText(acc).width * sx); acc += lettres[i]; }
     bornes.push(x0 + g.measureText(acc).width * sx);
     const lettreDe = (x) => { let l = 0; while (l < lettres.length - 1 && x > bornes[l + 1]) l++; return l; };
-    const px = g.getImageData(0, 0, Wm, Hm).data;
+    const P = piquer(g.getImageData(0, 0, Wm, Hm).data, Wm, Hm, angle, pas, longMax, lettreDe);
+    const geo = { points: P.points, lettres, W, H, taille: t, sx, ux: P.ux, uy: P.uy, nx: P.nx, ny: P.ny };
+    if (cache.size > 24) cache.clear();
+    cache.set(cle, geo);
+    return geo;
+  }
+
+  /**
+   * la géométrie d'une forme dans une boîte W × H (px CSS) : o.forme = { d, traits, epais, jours, joursTraits, joursEpais, vb, rot }
+   * (d : le tracé rempli ; traits : un tracé cousu en colonne, d'épaisseur epais ; jours, joursTraits : ce qu'on
+   * découpe dedans, rempli ou en trait d'épaisseur joursEpais ; vb : sa boîte [x, y, l, h], 32 × 32 par défaut ; rot : degrés)
+   */
+  function geometrieForme(forme, W, H, o = {}) {
+    const angle = (o.angle != null ? o.angle : 62) * Math.PI / 180;
+    const pas = o.pas || 0.6, longMax = o.longMax || 7.5;
+    const cle = ['forme', forme.d, forme.traits, forme.epais, forme.jours, forme.joursTraits, forme.joursEpais, forme.rot, W, H, angle, pas, longMax].join('|');
+    if (cache.has(cle)) return cache.get(cle);
+    const c = document.createElement('canvas');
+    const Wm = Math.max(4, Math.ceil(W * RES)), Hm = Math.max(4, Math.ceil(H * RES));
+    c.width = Wm; c.height = Hm;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const [vx, vy, vw, vh] = forme.vb || [0, 0, 32, 32];
+    const k = Math.min(Wm / vw, Hm / vh);
+    g.translate(Wm / 2, Hm / 2);
+    if (forme.rot) g.rotate(forme.rot * Math.PI / 180);
+    g.scale(k, k);
+    g.translate(-(vx + vw / 2), -(vy + vh / 2));
+    g.fillStyle = g.strokeStyle = '#fff';
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    if (forme.d) g.fill(new Path2D(forme.d), forme.regle || 'nonzero');
+    if (forme.traits) { g.lineWidth = forme.epais || 2.6; g.stroke(new Path2D(forme.traits)); }
+    g.globalCompositeOperation = 'destination-out'; // les jours : ce qui reste cuir, entre les points
+    if (forme.jours) g.fill(new Path2D(forme.jours));
+    if (forme.joursTraits) { g.lineWidth = forme.joursEpais || 1.6; g.stroke(new Path2D(forme.joursTraits)); }
+    const P = piquer(g.getImageData(0, 0, Wm, Hm).data, Wm, Hm, angle, pas, longMax, () => 0);
+    const geo = { points: P.points, lettres: [''], W, H, taille: 0, sx: 1, ux: P.ux, uy: P.uy, nx: P.nx, ny: P.ny };
+    if (cache.size > 24) cache.clear();
+    cache.set(cle, geo);
+    return geo;
+  }
+
+  /* la couture d'un masque (px : ses pixels, Wm × Hm) : des lignes parallèles penchées de angle, écartées de pas ;
+     chaque passage dans la forme est un point, coupé en quinconce au-delà de longMax (px CSS) */
+  function piquer(px, Wm, Hm, angle, pas, longMax, lettreDe) {
     const dedans = (x, y) => {
       const xi = x | 0, yi = y | 0;
       return xi >= 0 && yi >= 0 && xi < Wm && yi < Hm && px[(yi * Wm + xi) * 4 + 3] > 120;
@@ -296,10 +343,7 @@
       if (p.k % 2) { const x = p.x1, y = p.y1; p.x1 = p.x2; p.y1 = p.y2; p.x2 = x; p.y2 = y; } // (l'aiguille repart d'où elle est)
       p.r = hasard(i + 1);
     });
-    const geo = { points: pts, lettres, W, H, taille: t, sx, ux, uy, nx, ny };
-    if (cache.size > 24) cache.clear();
-    cache.set(cle, geo);
-    return geo;
+    return { points: pts, ux, uy, nx, ny };
   }
 
   /* le dessin d'un point : dessous (ombre, trous), dessus (le fil) */
@@ -394,13 +438,16 @@
   async function broder(hote, nom, o = {}) {
     if (!hote) return;
     const fil = o.fil || 'jaune';
-    const fam = o.famille || var_('--main', "'Shantell Sans', cursive");
-    await policePrete(fam, o.poids || 800, nom);
+    if (!o.forme) {
+      const fam = o.famille || var_('--sans', "'Bricolage Grotesque', sans-serif");
+      await policePrete(fam, o.poids || 800, nom);
+    }
     const L = calques(hote);
     const jeton = (L.jeton = (L.jeton || 0) + 1); // (une nouvelle couture annule la précédente)
     L.nom = nom;
+    L.opts = o;
     if (L.W < 12 || L.H < 8) { L.geo = null; L.n = 0; return; } // (l'hôte n'a pas encore de taille : vue cachée ; retailler() coudra)
-    L.geo = geometrie(nom, L.W, L.H, o);
+    L.geo = o.forme ? geometrieForme(o.forme, L.W, L.H, o) : geometrie(nom, L.W, L.H, o);
     hote.classList.remove('vide');
     effacer(L);
     const N = L.geo.points.length;
@@ -411,12 +458,12 @@
     const sauts = [];
     for (let i = 1; i < N; i++) if (L.geo.points[i].l !== L.geo.points[i - 1].l) sauts.push(i);
     const pause = 70 * (CO.ralenti || 1);
-    const utile = Math.max(400, duree - sauts.length * pause);
+    const utile = Math.max(o.duree ? 120 : 400, duree - sauts.length * pause);
     const tempsDe = (i) => { let n = 0; for (const s of sauts) if (s <= i) n++; return (i / N) * utile + n * pause; };
     const aiguille = document.createElement('span');
     aiguille.className = 'broderie-aiguille';
     hote.appendChild(aiguille);
-    machine(true);
+    if (!o.muet) machine(true);
     await new Promise((resolve) => {
       const t0 = performance.now();
       let i = 0;
@@ -437,7 +484,7 @@
       };
       requestAnimationFrame(pas);
     });
-    machine(false);
+    if (!o.muet) machine(false);
     aiguille.remove();
     if (L.jeton === jeton && L.n < N) tracer(L, N, fil);
   }
@@ -471,10 +518,10 @@
   /** redessine (sans animation) la couture d'un hôte à sa nouvelle taille */
   function retailler(hote, o = {}) {
     const L = hote && hote._broderie;
-    if (!L || !L.nom) return;
+    if (!L || (!L.nom && !(L.opts && L.opts.forme))) return;
     const W = Math.round(hote.clientWidth), H = Math.round(hote.clientHeight);
     if (W === L.W && H === L.H && L.geo) return;
-    broder(hote, L.nom, Object.assign({}, o, { anime: false }));
+    broder(hote, L.nom, Object.assign({}, L.opts, o, { anime: false }));
   }
 
   CO.Compte = { get, creer, modifier, oublier, ouvrir, valider, broder, decoudre, retailler, geometrie, telJoli };

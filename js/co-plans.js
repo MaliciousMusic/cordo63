@@ -231,7 +231,7 @@ span.plan{position:relative}
 .plan .nf{stroke:var(--pl-ac);stroke-width:calc(var(--u)*.7px)}
 .plan .gras{stroke-width:calc(var(--u)*1.9px)}
 .plan text{fill:var(--pl-1);stroke:none}
-.plan .n{font-family:var(--main,cursive);fill:var(--pl-ac)}
+.plan .n{font-family:var(--stylo,cursive);fill:var(--pl-ac)}
 .plan .nb{font-family:var(--chiffres,var(--sans,sans-serif));font-variant-numeric:tabular-nums;fill:var(--pl-1)}
 .plan .ca{font-family:var(--sans,sans-serif);letter-spacing:.09em;fill:var(--pl-2)}
 .plan .cb{font-family:var(--sans,sans-serif);letter-spacing:.06em;fill:var(--pl-1);font-weight:600}

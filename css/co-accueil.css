@@ -1,7 +1,7 @@
 /* ==========================================================================
    Cordo 63 — l'accueil : l'enseigne-soulier en tête (js/co-panneau.js) et les lacets
    sous le logo (js/co-lacets.js). Polices par jetons seulement : --chiffres (l'enseigne,
-   les lacets, les horaires), --main (la petite ligne peinte), --sans (l'adresse).
+   les lacets, les horaires), --sans (la petite ligne peinte, les notes, l'adresse).
    Safari : aucun transform CSS sur un <text> SVG (les mots suivent leur tracé par attributs).
    ========================================================================== */
 
@@ -12,8 +12,8 @@
   --pn-l: 186px;                               /* largeur du soulier (posée par le JS : 58 % de la vue, 180 à 236 px) */
   --pn-haut: 10px;                             /* du haut de la vue (déjà sous l'encoche) au haut du dessin */
   --pn-x: 50%;                                 /* position horizontale du soulier */
-  --pn-r: calc(var(--pn-l) * .088);            /* hauteur d'une ligne d'horaires */
-  --pn-pad: calc(var(--pn-l) * .04);
+  --pn-r: calc(var(--pn-l) * .09);             /* hauteur d'une ligne d'horaires */
+  --pn-pad: calc(var(--pn-l) * .046);          /* la marge du haut et du bas de chaque volet */
   position: absolute; top: 0; left: var(--pn-x); width: var(--pn-l); height: 0; margin-left: calc(var(--pn-l) / -2);
   z-index: 1; -webkit-tap-highlight-color: transparent;
   transition: transform .55s cubic-bezier(.5, 0, .3, 1), opacity .4s ease;
@@ -58,7 +58,7 @@
     linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(0, 0, 0, .1)),
     linear-gradient(100deg, #7C9676, #5E7659 60%, #4C624B);
   box-shadow: inset 0 0 0 1.6px #C9A04E, inset 0 0 0 2.6px rgba(20, 30, 18, .55), inset 0 1.5px 0 2.6px rgba(255, 240, 200, .18), 0 3px 5px -2px rgba(20, 14, 8, .45);
-  color: #FBF0DA; font-family: var(--main, cursive); font-weight: 600; font-size: calc(var(--pn-l) * .073); line-height: 1; letter-spacing: .01em;
+  color: #FBF0DA; font-family: var(--sans, sans-serif); font-weight: 650; font-size: calc(var(--pn-l) * .068); line-height: 1; letter-spacing: .01em;
   text-shadow: 0 1px 0 rgba(10, 16, 8, .45); white-space: nowrap;
 }
 .pn-ligne { padding-top: 1px; }
@@ -71,8 +71,9 @@
 .pn.pn-deplie .pn-volets { visibility: visible; }
 .pn.est-ouvert .pn-volets { pointer-events: auto; }
 .pn-volet { position: absolute; left: 0; top: 0; width: 100%; transform-origin: 50% 0; transform-style: preserve-3d; will-change: transform; }
-.pn-v1, .pn-v2 { height: calc(var(--pn-pad) + 4 * var(--pn-r)); }
-.pn-v3 { height: calc(var(--pn-l) * .47); }
+/* deux volets de quatre lignes entières (marge égale en haut et en bas), puis l'adresse */
+.pn-v1, .pn-v2 { height: calc(2 * var(--pn-pad) + 4 * var(--pn-r)); }
+.pn-v3 { height: calc(var(--pn-l) * .5); }
 .pn-volet::before { /* deux charnières de laiton sur le bord du haut */
   content: ''; position: absolute; left: 9%; right: 9%; top: -3px; height: 6px; z-index: 2; pointer-events: none;
   background:
@@ -98,21 +99,31 @@
 }
 .pn-voile-f { position: absolute; inset: 0; z-index: 3; border-radius: inherit; background: #10170E; opacity: 0; pointer-events: none; will-change: opacity; }
 
-/* la semaine : du lundi au dimanche, aujourd'hui surligné au jaune du ticket */
-.pn-feuille { padding: var(--pn-pad) calc(var(--pn-l) * .042) 0; }
-.pn-suite { margin-top: calc(-1 * (var(--pn-pad) + 4 * var(--pn-r))); }
-.pn-table { width: 100%; border-collapse: collapse; font-family: var(--chiffres, 'Arial Narrow', sans-serif); font-size: calc(var(--pn-l) * .071); line-height: 1; color: #2B2420; }
+/* la semaine : du lundi au dimanche, aujourd'hui surligné au jaune du ticket. Chaque volet porte ses
+   lignes entières ; le corps se serre (--pn-k, posé par le JS) si les horaires ne tiennent pas en largeur */
+.pn-feuille { padding: var(--pn-pad) calc(var(--pn-l) * .05); }
+.pn-table {
+  width: 100%; border-collapse: collapse; color: #2B2420;
+  font-family: var(--chiffres, 'Arial Narrow', sans-serif); font-size: calc(var(--pn-l) * .066 * var(--pn-k, 1)); line-height: 1;
+}
 .pn-table tr { height: var(--pn-r); }
-.pn-table th { padding: 0 0 0 3px; text-align: left; font-weight: 800; letter-spacing: .07em; color: #56705A; white-space: nowrap; }
-.pn-table td { padding: 0 3px 0 4px; text-align: right; font-weight: 600; letter-spacing: .02em; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pn-table td + td { padding-left: 2px; }
-.pn-table tr.auj { background: linear-gradient(178deg, transparent 8%, rgba(242, 210, 75, .88) 9% 91%, transparent 92%); }
+.pn-table th, .pn-table td { padding: .1em 0 0; vertical-align: middle; white-space: nowrap; }
+.pn-table th { position: relative; padding-left: .55em; text-align: left; font-weight: 800; letter-spacing: .05em; color: #56705A; }
+.pn-table td { padding-left: .5em; text-align: right; font-weight: 600; letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+.pn-table td:last-child { padding-right: .35em; }
+.pn-table tr.auj { background: linear-gradient(178deg, transparent 6%, rgba(242, 210, 75, .88) 7% 93%, transparent 94%); }
 .pn-table tr.auj th, .pn-table tr.auj td { color: #1E1915; font-weight: 800; }
 .pn-pastille { display: none; }
-.pn-table tr.auj .pn-pastille { display: inline-block; width: .36em; height: .36em; margin: 0 .22em .08em 0; border-radius: 50%; background: #E03A2E; vertical-align: middle; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .25); }
-.pn-table td.pn-ferme { text-align: center; font-family: var(--main, cursive); font-weight: 500; font-size: .86em; letter-spacing: 0; color: #A5412F; }
+.pn-table tr.auj .pn-pastille { /* dans la marge de gauche : le jour garde sa place */
+  display: block; position: absolute; left: .12em; top: 50%; width: .3em; height: .3em; margin-top: -.12em; border-radius: 50%;
+  background: #E03A2E; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .25);
+}
+.pn-table td.pn-ferme { padding-right: 0; text-align: center; font-family: var(--sans, sans-serif); font-weight: 600; font-size: .8em; letter-spacing: .02em; color: #A5412F; }
 .pn-table tr.ferme th { color: #8F8377; }
-.pn-note { display: flex; align-items: center; justify-content: center; height: var(--pn-r); margin: 0; font-family: var(--main, cursive); font-size: calc(var(--pn-l) * .058); color: #56705A; white-space: nowrap; }
+.pn-note {
+  display: flex; align-items: center; justify-content: center; height: var(--pn-r); margin: 0;
+  font-family: var(--sans, sans-serif); font-weight: 500; font-size: calc(var(--pn-l) * .052 * var(--pn-k, 1)); color: #56705A; white-space: nowrap;
+}
 
 /* l'adresse, le téléphone */
 .pn-v3 .pn-face { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--pn-l) * .026); padding: 5px 8px 7px; }
@@ -165,3 +176,34 @@
 @media (hover: hover) and (pointer: fine) { .lc-lacet:hover .lc-ombres { transform: translate(.7px, 1.3px); } }
 .lc-lacet.lc-presse .lc-ombres, .lc-lacet.lc-tire .lc-ombres { transform: translate(-.5px, -1.2px); }
 .lc-lacet.lc-anime .lc-svg { will-change: transform; } /* le lacet qu'on tire : son propre calque, le temps du geste */
+
+/* le doigt qui montre : la main de Clément toque le premier lacet (js/co-lacets.js, tant qu'on n'en a jamais tiré).
+   L'élément est posé au bout du doigt ; la main, dessinée l'index vers le haut, est tournée vers le lacet */
+.lc-doigt { position: absolute; z-index: 3; width: 0; height: 0; pointer-events: none; opacity: 0; transition: opacity .4s ease; }
+.lc-doigt.on { opacity: 1; }
+.lc-doigt-main {
+  position: absolute; left: -15px; top: -3px; width: 44px; height: 58px; display: block;
+  transform-origin: 15px 3px; transform: rotate(-28deg) translateY(11px);
+  filter: drop-shadow(0 0 1.2px rgba(255, 252, 244, .95)) drop-shadow(1.5px 3px 2px rgba(43, 36, 32, .38));
+  transition: transform .55s cubic-bezier(.2, .9, .3, 1.25);
+}
+.lc-doigt-main svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.lc-doigt:not(.on) .lc-doigt-main { transform: rotate(-28deg) translateY(52px); } /* elle arrive d'en bas, repart par là */
+.lc-doigt.toque .lc-doigt-main { animation: lc-toque var(--lc-cycle, 1.5s) cubic-bezier(.45, 0, .35, 1); }
+@keyframes lc-toque {
+  0% { transform: rotate(-28deg) translateY(11px); }
+  30% { transform: rotate(-28deg) translateY(-1px); }
+  40% { transform: rotate(-28deg) translateY(1.5px) scale(.96, .92); }
+  56% { transform: rotate(-28deg) translateY(13px); }
+  100% { transform: rotate(-28deg) translateY(11px); }
+}
+.lc-doigt-onde { /* l'onde au bout du doigt */
+  position: absolute; left: -15px; top: -15px; width: 30px; height: 30px; border-radius: 50%; opacity: 0;
+  border: 2.5px solid rgba(255, 252, 244, .95); box-shadow: 0 0 0 1.5px rgba(43, 36, 32, .3), inset 0 0 0 1.5px rgba(43, 36, 32, .2);
+}
+.lc-doigt.toque .lc-doigt-onde { animation: lc-onde var(--lc-cycle, 1.5s) ease-out; }
+@keyframes lc-onde {
+  0%, 38% { opacity: 0; transform: scale(.25); }
+  43% { opacity: .95; transform: scale(.5); }
+  78%, 100% { opacity: 0; transform: scale(1.75); }
+}

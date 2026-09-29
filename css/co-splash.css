@@ -3,15 +3,25 @@
    deux lacets enfilés de cubes de bois lettrés (dessinés dans le même <canvas> : ce bloc leur garde la
    place), puis « Entrer » (le ticket jaune) et « Entrer sans le son » (une étiquette de kraft).
    On entre : les lacets filent un à un sur le beat, les lacets à perles sont arrachés les derniers.
+   C'est aussi l'écran de chargement : html.ouverture (posé dans le <head>, avant la première image) le
+   montre, opaque, sur tout l'écran ; il s'en va quand on entre.
    Polices par jetons : --sans (l'étiquette).
    ========================================================================== */
 .splash {
-  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px 16px; overflow: hidden;
-  background: transparent; transition: opacity .35s ease; -webkit-tap-highlight-color: transparent;
+  position: fixed; inset: 0; z-index: 80; display: none; place-items: center; padding: 24px 16px; overflow: hidden;
+  background: transparent; transition: opacity .35s ease; -webkit-tap-highlight-color: transparent; touch-action: none;
 }
-.splash[hidden] { display: none; }
+html.ouverture .splash { display: grid; }
+.splash[hidden] { display: none !important; }
 .splash.part { opacity: 0; pointer-events: none; }
-.no-js .splash { display: none; }
+/* le fond, sous la toile : l'établi sombre ; opaque tant que l'appli se prépare (rien ne se voit entre les
+   mailles), il s'efface quand on entre : l'appli paraît entre les lacets qui s'en vont */
+.splash::before {
+  content: ''; position: absolute; inset: 0;
+  background: var(--grain), radial-gradient(120% 85% at 50% 42%, #3E2E22, #231811 62%, #150F0B);
+  transition: opacity .5s ease .12s;
+}
+.splash.lance::before { opacity: 0; }
 .splash-lacis { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
 /* le milieu : sans cadre, les perles (leur place), puis les boutons */
@@ -20,16 +30,21 @@
   display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
 }
 .splash-perles { width: 100%; height: 150px; flex: none; }
-.splash-entrer, .splash-muet {
-  opacity: 0; transform: translateY(8px); pointer-events: none; /* (pas de toucher à l'aveugle avant qu'ils paraissent) */
-  transition: opacity .4s ease .45s, transform .5s cubic-bezier(.2, 1.3, .4, 1) .45s;
+.splash-entrer, .splash-muet { /* cachés tant que l'appli se charge : ni vus, ni touchés, ni atteints au clavier */
+  opacity: 0; transform: translateY(8px); pointer-events: none; visibility: hidden;
+  transition: opacity .4s ease .2s, transform .5s cubic-bezier(.2, 1.3, .4, 1) .2s, visibility 0s linear .7s;
 }
-.splash-badge.on .splash-entrer, .splash-badge.on .splash-muet { opacity: 1; transform: none; pointer-events: auto; }
-/* le ticket, bien détaché de la toile */
+.splash-badge.on .splash-entrer, .splash-badge.on .splash-muet {
+  opacity: 1; transform: none; pointer-events: auto; visibility: visible;
+  transition: opacity .4s ease .2s, transform .5s cubic-bezier(.2, 1.3, .4, 1) .2s, visibility 0s;
+}
+.splash-badge.on .splash-muet { transition-delay: .35s, .35s, 0s; }
+/* le ticket, bien détaché de la toile (son épaisseur, et une ombre plus franche) */
 .splash-entrer {
   min-width: 170px;
-  box-shadow: inset 0 -2px 0 rgba(160, 120, 10, .25), 0 1px 2px rgba(24, 14, 6, .45), 0 12px 24px -8px rgba(24, 14, 6, .8);
+  box-shadow: 0 var(--levre-h, 3px) 0 var(--levre, #B8921B), 0 1px 2px rgba(24, 14, 6, .45), 0 14px 26px -8px rgba(24, 14, 6, .85);
 }
+.splash-entrer:active { box-shadow: 0 1px 0 var(--levre, #B8921B), 0 1px 2px rgba(24, 14, 6, .45), 0 8px 16px -8px rgba(24, 14, 6, .85); }
 /* « Entrer sans le son » : une petite étiquette de kraft, pointe et œillet à gauche */
 .splash-muet {
   position: relative; isolation: isolate; margin-top: -2px; border: 0; background: none; cursor: pointer;

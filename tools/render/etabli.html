@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Rendu : le décor de l'établi</title>
+<style>
+  /* Le décor de l'établi (le plateau, le tapis de découpe, tout ce qui traîne autour) d'une fenêtre fixe
+     (CO.Etabli.REF), rendu pixel par pixel une fois pour toutes (js/co-rendu.js, js/co-outils.js) : l'appli
+     le recadre au lieu de le calculer. Appelé par tools/render-images.mjs : rendre() → WebP en data URL. */
+  :root {
+    --large: 'Bricolage Grotesque', system-ui, sans-serif;
+    --sans: 'Bricolage Grotesque', system-ui, sans-serif;
+    --chiffres: 'Big Shoulders', 'Arial Narrow', sans-serif;
+    --stylo: 'Covered By Your Grace', 'Segoe Print', cursive;
+  }
+  html, body { margin: 0; background: #231b16; font-family: var(--sans); }
+</style>
+<link rel="stylesheet" href="../../css/fonts.css">
+</head>
+<body>
+<script src="../../js/co-core.js"></script>
+<script src="../../js/co-rendu.js"></script>
+<script src="../../js/co-outils.js"></script>
+<script src="../../js/co-etabli.js"></script>
+<script>
+  window.rendre = async function ({ qualite = 0.86 } = {}) {
+    // les polices des étiquettes, des réglets, des tickets qui traînent
+    await Promise.all(['700 12px "Big Shoulders"', '600 12px "Bricolage Grotesque"', '400 12px "Covered By Your Grace"'].map((f) => document.fonts.load(f).catch(() => null)));
+    const c = await CO.Etabli.rendreReference({});
+    return { l: c.width, h: c.height, image: c.toDataURL('image/webp', qualite) };
+  };
+</script>
+</body>
+</html>

@@ -47,6 +47,25 @@
 
   // la durée des gestes (ms) ; l'action part à la fin du tirage
   const TENSION = 190, GLISSE = 470, RETOUR = 540, DETENTE = 560;
+
+  /* la main qui montre les lacets (celle de Clément : sa montre au bracelet orange), dessinée l'index vers
+     le haut, le bout du doigt en (15, 3) ; elle est tournée vers le lacet par la feuille de style */
+  const MAIN_SVG = `<svg viewBox="0 0 44 58" focusable="false">
+  <defs><linearGradient id="lc-peau" x1="0" x2="1" y1="0" y2=".25"><stop offset="0" stop-color="#F0C4A0"/><stop offset=".55" stop-color="#E2A983"/><stop offset="1" stop-color="#C98B64"/></linearGradient></defs>
+  <g stroke="#2B2420" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M14.2 45.5 13.6 58h19.2l-.5-12.5z" fill="url(#lc-peau)"/>
+    <rect x="12.2" y="47.6" width="22.2" height="7.2" rx="2.2" fill="#E27A2B"/>
+    <path d="M31.2 48.6v5.2" stroke="#F6D3A8" stroke-width="1.1"/>
+    <rect x="19.6" y="21.6" width="7.2" height="11" rx="3.6" fill="url(#lc-peau)"/>
+    <rect x="26.3" y="23.4" width="6.4" height="10" rx="3.2" fill="url(#lc-peau)"/>
+    <rect x="32" y="26.2" width="5.4" height="9" rx="2.7" fill="url(#lc-peau)"/>
+    <rect x="9" y="25" width="28.4" height="24" rx="9.5" fill="url(#lc-peau)"/>
+    <path d="M10.5 33V7.6a4.5 4.5 0 0 1 9 0V31.4" fill="url(#lc-peau)"/>
+    <path d="M9.6 33.2c-4-1-5.2 4.4-1.6 6.9l6.6 4.2c3 1.9 7-.6 5-4.1-1.1-1.9-3.9-2.8-5.9-3.8z" fill="url(#lc-peau)"/>
+  </g>
+  <path d="M12.9 7.4a2.1 2.4 0 0 1 4.2 0v1.6h-4.2z" fill="#FBE3CE" opacity=".8"/>
+  <path d="M21.6 27.4h3.2M28 28.6h2.6M33.4 30.6h2.2" stroke="#9C6444" stroke-width="1" stroke-linecap="round" opacity=".7"/>
+</svg>`;
   const DX = 2; // pas de la table de la ligne médiane (px)
 
   /* ---------- couleurs : un lacet, sa trame, son envers, son fil, ses ferrets ---------- */
@@ -656,6 +675,7 @@
       } else location.href = it.href;
     }
     function activer(l, e) {
+      doigtVu();
       if (e && l.item.href && (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || (e.button && e.button > 0))) return; // un lien dans un nouvel onglet : le navigateur s'en charge
       if (reduit()) {
         if (typeof l.item.action === 'function') { if (e) e.preventDefault(); agir(l); }
@@ -663,6 +683,7 @@
       }
       if (e) e.preventDefault();
       if (occupe) return;
+      if (l.etat === 'flechi') { l.etat = 'repos'; l.amp = 1; } // (il fléchissait sous le doigt de l'aide : on le tire quand même)
       if (l.etat === 'dehors') { rentrer(l); return; }
       if (l.etat !== 'repos') return;
       // le côté : vers le bout le plus proche du doigt (au clavier : un sur deux)
@@ -702,6 +723,107 @@
       }
     });
 
+    /* ---------- le doigt qui montre : « ça se touche » ----------
+       Tant qu'on n'a jamais tiré de lacet : quand les lacets sont à l'écran (l'appli dévoilée, sur
+       l'accueil), une main arrive (celle de Clément, sa montre au bracelet orange) et toque trois fois
+       le premier lacet, juste après son mot ; le lacet fléchit sous le doigt, une onde part du bout du
+       doigt. Puis la main s'en va. Une fois par visite ; plus jamais dès qu'un lacet a été tiré. */
+    const CLE_DOIGT = 'lacets-tires';
+    const doigt = { el: null, fini: opts.indice === false || !lacets.length || !!(CO.store && CO.store.get(CLE_DOIGT, false)), t: [], io: null };
+    function doigtVu() {
+      if (!doigt.fini && CO.store) CO.store.set(CLE_DOIGT, true);
+      doigtFin();
+    }
+    function doigtFin() {
+      doigt.fini = true;
+      doigt.t.forEach(clearTimeout);
+      doigt.t = [];
+      if (doigt.io) { doigt.io.disconnect(); doigt.io = null; }
+      const el = doigt.el;
+      if (!el) return;
+      doigt.el = null;
+      el.classList.remove('on');
+      setTimeout(() => el.remove(), 450);
+    }
+    // le lacet sous le doigt : il fléchit un peu (la vague s'aplatit, puis revient en ressort)
+    function flechir(l) {
+      if (l.etat !== 'repos' || occupe || detruit || reduit()) return;
+      l.etat = 'flechi';
+      l.el.classList.add('lc-presse');
+      const t0 = performance.now(), T = 520;
+      lancer((now) => {
+        if (l.etat !== 'flechi') return false;
+        const p = Math.min(1, (now - t0) / T);
+        l.amp = 1 - 0.2 * Math.exp(-6 * p) * Math.cos(9 * p) * (1 - p);
+        if (p > 0.3) l.el.classList.remove('lc-presse');
+        table(l);
+        l.s0 = sDeX(l, l.xL);
+        dessiner(l);
+        if (p >= 1) { l.amp = 1; table(l); l.s0 = sDeX(l, l.xL); dessiner(l); l.etat = 'repos'; return false; }
+        return true;
+      });
+    }
+    function doigtLancer() {
+      if (doigt.fini || doigt.el || detruit) return;
+      const l = lacets[0];
+      if (l.etat !== 'repos') return;
+      // le bout du doigt : juste après le mot, sur la ligne médiane du lacet
+      const taille = parseFloat(root.style.getPropertyValue('--lc-taille')) || 15;
+      const tl = l.tl || l.item.label.length * taille * 0.55;
+      const x = clamp(l.xc + tl / 2 + w0 * 0.9, W * 0.55, W - 46);
+      const y = parseFloat(l.el.style.top) - marge + yA(l, x);
+      const el = document.createElement('div');
+      el.className = 'lc-doigt';
+      el.setAttribute('aria-hidden', 'true');
+      el.style.left = x.toFixed(1) + 'px';
+      el.style.top = y.toFixed(1) + 'px';
+      el.innerHTML = `<i class="lc-doigt-onde"></i><span class="lc-doigt-main">${MAIN_SVG}</span>`;
+      const cycle = 1500 * lent(), toucher = 0.4 * cycle, n = reduit() ? 0 : 3;
+      el.style.setProperty('--lc-cycle', cycle + 'ms');
+      root.appendChild(el);
+      doigt.el = el;
+      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('on')));
+      for (let k = 0; k < n; k++) {
+        doigt.t.push(setTimeout(() => {
+          if (!doigt.el) return;
+          el.classList.remove('toque');
+          void el.offsetWidth; // (l'animation repart)
+          el.classList.add('toque');
+        }, 520 + k * cycle));
+        doigt.t.push(setTimeout(() => { if (doigt.el) { flechir(l); son('tap'); } }, 520 + k * cycle + toucher));
+      }
+      doigt.t.push(setTimeout(doigtFin, 520 + Math.max(1, n) * cycle + (n ? 250 : 2600)));
+    }
+    function doigtGuetter() {
+      if (doigt.fini || detruit) return;
+      // l'ouverture couvre encore l'écran : on attend qu'elle ait dévoilé l'appli
+      if (document.documentElement.classList.contains('ouverture') && !doigt.ouverture) {
+        if (!doigt.attend && CO.on) { doigt.attend = true; CO.on('ouverture', () => { doigt.ouverture = true; doigtGuetter(); }); }
+        return;
+      }
+      if (maVue && CO.view && CO.view !== maVue) return;
+      if (doigt.io || doigt.el) return;
+      if (!window.IntersectionObserver) { doigt.t.push(setTimeout(doigtLancer, 1400)); return; }
+      doigt.io = new IntersectionObserver((es) => {
+        const vu = es.some((e) => e.isIntersecting && e.intersectionRatio > 0.95);
+        clearTimeout(doigt.attente);
+        if (vu && !doigt.el) doigt.attente = setTimeout(() => { if (doigt.io) { doigt.io.disconnect(); doigt.io = null; } doigtLancer(); }, 1300);
+      }, { threshold: [0, 0.95, 1] });
+      doigt.io.observe(lacets[0].el);
+    }
+    if (!doigt.fini) {
+      if (CO.on) CO.on('view', (v) => {
+        if (doigt.fini || detruit) return;
+        if (maVue && v !== maVue) { // on quitte l'accueil pendant qu'elle toque : elle reviendra
+          doigt.t.forEach(clearTimeout); doigt.t = [];
+          clearTimeout(doigt.attente);
+          if (doigt.io) { doigt.io.disconnect(); doigt.io = null; }
+          if (doigt.el) { doigt.el.remove(); doigt.el = null; }
+        } else setTimeout(doigtGuetter, 300);
+      });
+      setTimeout(doigtGuetter, 0);
+    }
+
     /* ---------- le retour sur l'accueil, sur la page ---------- */
     if (CO.on) CO.on('view', (v) => { if (!detruit && (!maVue || v === maVue)) planifierRetour(260); });
     const surPageshow = () => planifierRetour(220);
@@ -714,6 +836,7 @@
 
     function detruire() {
       if (detruit) return;
+      doigtFin();
       detruit = true;
       cancelAnimationFrame(raf);
       clearTimeout(tRetour);

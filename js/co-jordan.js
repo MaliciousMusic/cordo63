@@ -2004,6 +2004,15 @@ onmessage = function (e) { var m = e.data; try {
           for (let i = 0; i < N; i++) { self.psi += 0.01; self.dessine(); attend(); }
           return (performance.now() - t0) / N;
         },
+        // une image précise, pour l'outil qui cuit l'enseigne en images (tools/render/enseigne.html) : la chaussure
+        // à yaw (rad), de jour ou de nuit, sculptée ; renvoie le canvas, à lire tout de suite (dans la même tâche)
+        rendu(yaw, nuit) {
+          if (!self.E || !self.pret) return null;
+          self.psi = +yaw || 0; self.nuit = self.nuitCible = nuit ? 1 : 0;
+          self.alpha = 1; self.gonfle = 0; self.relief = 1;
+          self.dessine();
+          return self.canvas;
+        },
         get yaw() { return angle(self.psi); },
         get stats() { return self.stats; },
         get cartes() { return self.C ? { lat: self.C.lat, med: self.C.med, dessus: self.C.dessus } : null; },

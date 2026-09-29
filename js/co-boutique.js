@@ -1988,6 +1988,8 @@
 
       // pour le labo et les tests
       faire(id) { if (!ACTIVITES[id] || reduit) return; force = id; if (!vivant) scene.jouer(); else if (!regardeNous) jeton.annule = true; },
+      /** le temps de la scène à la main (labo, captures) : pause() d'abord, puis pas(ms) avance de ms et dessine */
+      pas(ms = 33) { maj(ms); rendre(); placerCibles(); },
       get activites() { return Object.keys(ACTIVITES); },
       setNuit(on) { nuit = !!on; if (reduit) { nuitK = nuit ? 1 : 0; rendre(); } demander(); },
       perf: PERF,

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Rendu : l'enseigne en images</title>
+<style>
+  /* L'enseigne (la Jordan en bois, js/co-jordan.js) rendue pose par pose sur un tour complet, de jour et de nuit :
+     deux planches d'images que l'appli feuillette (js/co-enseigne.js). La taille des poses et leur nombre viennent
+     de CO.Enseigne.PLANCHE. Appelé par tools/render-images.mjs : rendre() → { jour, nuit } (WebP en data URL). */
+  html, body { margin: 0; background: transparent; }
+  #hote { position: absolute; left: 0; top: 0; }
+</style>
+</head>
+<body>
+<div id="hote"></div>
+<script src="../../js/co-core.js"></script>
+<script src="../../js/co-jordan.js"></script>
+<script src="../../js/co-enseigne.js"></script>
+<script>
+  window.rendre = async function ({ qualite = 0.84 } = {}) {
+    const P = CO.Enseigne.PLANCHE;
+    const hote = document.getElementById('hote');
+    hote.style.width = P.l + 'px';
+    hote.style.height = P.h + 'px';
+    CO.emit('view', 'accueil');
+    const J = await CO.Jordan.create(hote, { mode: 'enseigne', pose: 'pointe', interactive: false, fige: true, qualite: 'haute' });
+    const sortie = { l: P.l, h: P.h, n: P.n };
+    for (const nuit of [false, true]) {
+      const planche = document.createElement('canvas');
+      planche.width = P.colonnes * P.l;
+      planche.height = Math.ceil(P.n / P.colonnes) * P.h;
+      const g = planche.getContext('2d');
+      for (let k = 0; k < P.n; k++) {
+        const cv = J.rendu((k / P.n) * Math.PI * 2, nuit);
+        if (!cv) throw new Error('WebGL indisponible : lancer Chrome avec un GPU (ou SwiftShader)');
+        g.drawImage(cv, (k % P.colonnes) * P.l, Math.floor(k / P.colonnes) * P.h, P.l, P.h);
+      }
+      sortie[nuit ? 'nuit' : 'jour'] = planche.toDataURL('image/webp', qualite);
+    }
+    J.detruire();
+    return sortie;
+  };
+</script>
+</body>
+</html>
