@@ -176,3 +176,34 @@
 @media (hover: hover) and (pointer: fine) { .lc-lacet:hover .lc-ombres { transform: translate(.7px, 1.3px); } }
 .lc-lacet.lc-presse .lc-ombres, .lc-lacet.lc-tire .lc-ombres { transform: translate(-.5px, -1.2px); }
 .lc-lacet.lc-anime .lc-svg { will-change: transform; } /* le lacet qu'on tire : son propre calque, le temps du geste */
+
+/* le doigt qui montre : la main de Clément toque le premier lacet (js/co-lacets.js, tant qu'on n'en a jamais tiré).
+   L'élément est posé au bout du doigt ; la main, dessinée l'index vers le haut, est tournée vers le lacet */
+.lc-doigt { position: absolute; z-index: 3; width: 0; height: 0; pointer-events: none; opacity: 0; transition: opacity .4s ease; }
+.lc-doigt.on { opacity: 1; }
+.lc-doigt-main {
+  position: absolute; left: -15px; top: -3px; width: 44px; height: 58px; display: block;
+  transform-origin: 15px 3px; transform: rotate(-28deg) translateY(11px);
+  filter: drop-shadow(0 0 1.2px rgba(255, 252, 244, .95)) drop-shadow(1.5px 3px 2px rgba(43, 36, 32, .38));
+  transition: transform .55s cubic-bezier(.2, .9, .3, 1.25);
+}
+.lc-doigt-main svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.lc-doigt:not(.on) .lc-doigt-main { transform: rotate(-28deg) translateY(52px); } /* elle arrive d'en bas, repart par là */
+.lc-doigt.toque .lc-doigt-main { animation: lc-toque var(--lc-cycle, 1.5s) cubic-bezier(.45, 0, .35, 1); }
+@keyframes lc-toque {
+  0% { transform: rotate(-28deg) translateY(11px); }
+  30% { transform: rotate(-28deg) translateY(-1px); }
+  40% { transform: rotate(-28deg) translateY(1.5px) scale(.96, .92); }
+  56% { transform: rotate(-28deg) translateY(13px); }
+  100% { transform: rotate(-28deg) translateY(11px); }
+}
+.lc-doigt-onde { /* l'onde au bout du doigt */
+  position: absolute; left: -15px; top: -15px; width: 30px; height: 30px; border-radius: 50%; opacity: 0;
+  border: 2.5px solid rgba(255, 252, 244, .95); box-shadow: 0 0 0 1.5px rgba(43, 36, 32, .3), inset 0 0 0 1.5px rgba(43, 36, 32, .2);
+}
+.lc-doigt.toque .lc-doigt-onde { animation: lc-onde var(--lc-cycle, 1.5s) ease-out; }
+@keyframes lc-onde {
+  0%, 38% { opacity: 0; transform: scale(.25); }
+  43% { opacity: .95; transform: scale(.5); }
+  78%, 100% { opacity: 0; transform: scale(1.75); }
+}
