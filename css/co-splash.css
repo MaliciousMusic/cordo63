@@ -9,9 +9,12 @@
    ========================================================================== */
 .splash {
   position: fixed; inset: 0; z-index: 80; display: none; place-items: center; padding: 24px 16px; overflow: hidden;
+  min-height: 100vh; min-height: 100lvh; /* tout l'écran, même quand le téléphone annonce d'abord une fenêtre plus courte */
   background: transparent; transition: opacity .35s ease; -webkit-tap-highlight-color: transparent; touch-action: none;
 }
 html.ouverture .splash { display: grid; }
+/* pendant l'ouverture, ce qui déborderait (sous l'heure, sous la barre du bas) est du même brun que la toile */
+html.ouverture, html.ouverture body { background: #1E1510; }
 .splash[hidden] { display: none !important; }
 .splash.part { opacity: 0; pointer-events: none; }
 /* le fond, sous la toile : l'établi sombre ; opaque tant que l'appli se prépare (rien ne se voit entre les

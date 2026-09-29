@@ -877,6 +877,7 @@
   const L_CUISSE = 44, L_JAMBE = 42;
 
   /* ---------- une main, dans son repère : origine au poignet, x vers les doigts, y vers le pouce ---------- */
+  const PINCE = [12.7, -5.6], ECHELLE_MAIN = 0.93; // où le pouce et l'index se touchent (la pose 'pince'), dans ce repère
   function dessinerMain(ctx, pose, ombre) {
     const peauG = (x0, x1) => lin(ctx, x0, -4, x1, 4, [[0, PAL.peauClair], [0.45, PAL.peau], [1, PAL.peauOmbre]]);
     const doigt = (x0, y0, ang, l, r, pli = 0) => { // un doigt en deux phalanges
@@ -928,15 +929,16 @@
         ongle(t[0], t[1], t[2]);
         break;
       }
-      case 'pince': { // le pouce et l'index se touchent (un clou, une clé)
+      case 'pince': { // le pouce et l'index se touchent au bout (PINCE) : un clou, une clé, un stylo
         paume(8, 8);
-        ctx.strokeStyle = PAL.peauOmbre;
-        doigt(7.6, 3.2, 0.9, 5, 0.95, 1.2);
-        doigt(7.9, 1.2, 0.8, 5.4, 1.0, 1.3);
-        doigt(7.9, -0.9, 0.7, 5.6, 1.0, 1.3);
+        // les trois autres doigts repliés dans la paume (la peau, cernée d'un pli)
+        [[7.7, 2.9, 0.62, 4.6], [8, 1.1, 0.46, 5.3], [8, -0.8, 0.32, 5.6]].forEach(([x, y, a, l]) => {
+          ctx.strokeStyle = PAL.peauOmbre; doigt(x, y, a, l, 1.02, 1.6);
+          ctx.strokeStyle = PAL.peau; doigt(x, y, a, l, 0.84, 1.6);
+        });
         ctx.strokeStyle = PAL.peau;
-        const i1 = doigt(8, -2.9, -0.15, 7.6, 1.0, 0.5);
-        const p1 = doigt(2.6, -3.4, -0.55, 7.6, 1.15, 0.45);
+        const i1 = doigt(8, -2.7, -0.12, 7.2, 1.0, -0.9);
+        const p1 = doigt(2.6, -3.6, -0.3, 9.4, 1.15, 0.25);
         ongle(i1[0], i1[1], i1[2]);
         ongle(p1[0], p1[1], p1[2]);
         break;
@@ -1405,9 +1407,11 @@
       const pole = Pj(s * 30, 112, -30);
       const T = [M.x, M.y];
       const cA = clamp(M.coude || 0, 0, 1); // le coude qui vient vers nous : le bras se raccourcit à l'œil
-      const L1 = L_BRAS * (1 - 0.42 * cA), L2 = (L_AVB + L_MAIN * 0.7) * (1 - 0.1 * cA);
+      const cB = clamp(M.raccourci || 0, 0, 1); // l'avant-bras qui pointe vers nous (une main tenue devant la poitrine)
+      const kB = (1 - 0.1 * cA) * (1 - 0.62 * cB);
+      const L1 = L_BRAS * (1 - 0.42 * cA), L2 = (L_AVB + L_MAIN * 0.7) * kB;
       const k = ik(Sh, T, L1, L2, pole);
-      let E = k.E, versW = [k.W[0] - E[0], k.W[1] - E[1]], Lavb = L_AVB * (1 - 0.1 * cA);
+      let E = k.E, versW = [k.W[0] - E[0], k.W[1] - E[1]], Lavb = L_AVB * kB;
       // une main tenue devant soi, sous l'épaule : le coude ne monte pas, il vient vers nous (tout se raccourcit à l'œil)
       const monte = Sh[1] - E[1];
       if (monte > 0 && T[1] > Sh[1] - 8) {
@@ -1534,7 +1538,7 @@
       ctx.save();
       ctx.translate(W[0], W[1]);
       ctx.rotate(angMain);
-      ctx.scale(0.93, 0.93 * B.flip);
+      ctx.scale(ECHELLE_MAIN, ECHELLE_MAIN * B.flip);
       dessinerMain(ctx, M.pose || 'ouverte', true);
       ctx.restore();
     }
@@ -1733,5 +1737,5 @@
     };
   }
 
-  CO.Clement = { create, PAL, dessinerTete, dessinerMain, prechauffer, outils: { lisse, poly, lin, rad, rgba, toile, enveloppe, remplirMotif, membre } };
+  CO.Clement = { create, PAL, PINCE, ECHELLE_MAIN, dessinerTete, dessinerMain, prechauffer, outils: { lisse, poly, lin, rad, rgba, toile, enveloppe, remplirMotif, membre } };
 })();

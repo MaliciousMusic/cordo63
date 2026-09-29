@@ -29,13 +29,13 @@
 /* ======================================================================
    Le mur de pierre, la lampe, la planche
    ====================================================================== */
-.mur { position: relative; overflow: hidden; padding: 0 0 34px; background: #3A2D23; isolation: isolate; }
+.mur { position: relative; overflow: hidden; padding: var(--safe-t) 0 34px; background: #3A2D23; isolation: isolate; }
 .mur-pierre { position: absolute; left: 0; top: 0; z-index: -1; width: 100%; height: 100%; max-width: none; pointer-events: none; } /* (plus haut que le mur : js/co-suivi.js) */
 .mur::after { /* au pied du mur, l'ombre de l'établi */
   content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 60px; z-index: -1; pointer-events: none;
   background: linear-gradient(180deg, transparent, rgba(12, 7, 3, .6));
 }
-.mur-lampe { position: absolute; left: max(4px, calc(26% - 52px)); top: 0; width: 104px; height: 74px; pointer-events: none; z-index: 3; }
+.mur-lampe { position: absolute; left: max(4px, calc(26% - 52px)); top: var(--safe-t); width: 104px; height: 74px; pointer-events: none; z-index: 3; }
 .mur-lampe svg { width: 100%; height: 100%; overflow: visible; }
 
 /* la planche de chêne vissée au mur : l'étiquette Dymo, les crochets de la première rangée */

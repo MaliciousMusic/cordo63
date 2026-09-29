@@ -156,7 +156,7 @@
     A('bq-gorgee', (c, d, t, op, o) => { o.noise(c, d, t, { f: 700, f2: 1400, q: 2, a: 0.03, d: 0.12, v: 0.02 }); o.tone(c, d, t + 0.25, { f: 320, f2: 220, glide: 0.08, a: 0.01, d: 0.07, v: 0.02 }); }, 300);
     A('bq-pose', (c, d, t, op, o) => { o.strike(c, d, t, 300 + Math.random() * 80, 'wood', { d: 0.06, v: 0.05 * (op.v || 1) }); o.noise(c, d, t, { f: 1200, q: 0.8, a: 0.001, d: 0.02, v: 0.03 * (op.v || 1) }); }, 60);
     A('bq-pas', (c, d, t, op, o) => { o.strike(c, d, t, 180 + Math.random() * 40, 'wood', { d: 0.05, v: 0.025 }); o.noise(c, d, t, { f: 700, q: 0.7, a: 0.002, d: 0.04, v: 0.012 }); }, 120);
-    A('bq-clou', (c, d, t, op, o) => { o.strike(c, d, t, 3400, 'metal', { d: 0.03, v: 0.018 }); }, 50);
+    A('bq-clou', (c, d, t, op, o) => { o.strike(c, d, t, 3400, 'metal', { d: 0.03, v: 0.018 * (op.v || 1) }); }, 50);
     A('bq-etau', (c, d, t, op, o) => { o.strike(c, d, t, 1200, 'metal', { d: 0.05, v: 0.04 }); o.noise(c, d, t + 0.02, { f: 2400, q: 2, a: 0.01, d: 0.08, v: 0.02 }); }, 80);
   }
 
@@ -479,10 +479,16 @@
       const c = Math.cos(o.a), s = Math.sin(o.a), X = lx * o.sens * o.k, Y = ly * o.k;
       return [o.x + c * X - s * Y, o.y + s * X + c * Y];
     }
-    /** l'objet suit la main qui le tient (le creux de la main + la prise, tournée avec la main) */
+    /** le bout des doigts pincés (pouce contre index) d'un bras dessiné */
+    function boutDe(B) {
+      const P = CO.Clement.PINCE, k = CO.Clement.ECHELLE_MAIN, c = Math.cos(B.angMain), s = Math.sin(B.angMain);
+      const lx = P[0] * k, ly = P[1] * k * B.flip;
+      return [B.W[0] + c * lx - s * ly, B.W[1] + s * lx + c * ly];
+    }
+    /** l'objet suit la main qui le tient (le creux de la main, ou le bout des doigts pour ce qu'on pince, + la prise tournée avec l'objet) */
     function suivreMain(o, B) {
       const ca = Math.cos(B.angMain), sa = Math.sin(B.angMain);
-      const px = B.W[0] + ca * 8.5, py = B.W[1] + sa * 8.5;
+      const [px, py] = o.auBout ? boutDe(B) : [B.W[0] + ca * 8.5, B.W[1] + sa * 8.5];
       const ang = o.aMonde != null ? o.aMonde : B.angMain + (o.angMain || 0);
       o.a = ang;
       const c = Math.cos(ang), s = Math.sin(ang), gx = o.prise[0] * o.sens * o.k, gy = o.prise[1] * o.k;
@@ -513,8 +519,28 @@
         g.fillStyle = 'rgba(255,255,255,0.5)'; g.fillRect(21, 5.2, 2.6, 0.5);
       },
     });
+    /** une tête de clou d'acier (vue un peu d'en haut), son ombre, son reflet */
+    function teteClou(g, x, y, r = 0.68) {
+      g.fillStyle = 'rgba(28,16,8,0.45)'; g.beginPath(); g.ellipse(x + 0.1, y + 0.16, r * 1.05, r * 0.48, 0, 0, TAU); g.fill();
+      g.fillStyle = lin(g, x - r, y - r * 0.45, x + r, y + r * 0.45, [[0, '#F4F6F7'], [0.45, '#AEB4B9'], [1, '#4E5358']]);
+      g.beginPath(); g.ellipse(x, y, r, r * 0.45, 0, 0, TAU); g.fill();
+      g.strokeStyle = 'rgba(28,30,34,0.85)'; g.lineWidth = 0.12; g.stroke();
+      g.fillStyle = 'rgba(255,255,255,0.95)'; g.beginPath(); g.ellipse(x - r * 0.3, y - r * 0.1, r * 0.34, r * 0.14, 0, 0, TAU); g.fill();
+    }
+    /* la semelle neuve vue un peu d'en haut : son dessus (y = -2 - DESSUS(x)) au-dessus de la tranche ; les clous se
+       plantent le long des bords de l'avant-pied (la demi-semelle), le bord de devant d'abord, puis celui du fond */
+    const DESSUS = [[-14, 0.3], [-12.6, 1.4], [-9.5, 1.9], [-5.5, 1.75], [-2, 1.45], [2, 1.85], [6, 2.55], [10, 2.6], [12.8, 2.05], [14.3, 0.5]];
+    const dessusSemelle = (x) => {
+      for (let k = 1; k < DESSUS.length; k++) if (x <= DESSUS[k][0]) { const [x0, h0] = DESSUS[k - 1], [x1, h1] = DESSUS[k]; return lerp(h0, h1, (x - x0) / (x1 - x0)); }
+      return DESSUS[DESSUS.length - 1][1];
+    };
+    const PLACES_CLOUS = [];
+    for (let r = 0; r < 2; r++) for (let k = 0; k < 8; k++) PLACES_CLOUS.push([-0.5 + k * 1.9, r]);
+    /** où entre le clou (repère de la chaussure) : juste derrière le bord de devant, ou juste devant celui du fond */
+    const piedClou = ([x, rang]) => [x, rang ? -2 - dessusSemelle(x) + 0.5 : -2 - 0.5];
+    const CUIRS = ['#231C19', '#5A3422', '#6B3A22', '#2B2B2D', '#7A4A2A'];
     objet('surForme', {
-      x: 300, y: -123.5, a: 0, cuir: '#231C19', clous: 0, colle: 0, neuve: false,
+      x: 300, y: -123.5, a: 0, cuir: '#231C19', clous: [], colle: 0, neuve: false, eclat: 0,
       dessin(g, o) {
         g.save(); g.scale(1, -1);
         D.derby(g, -14.5, 0, 29, o.cuir, 1, '#3A2616');
@@ -523,13 +549,40 @@
         g.beginPath(); g.ellipse(6, 7.5, 7, 1.4, -0.1, 0, TAU); g.fill();
         g.fillStyle = '#5A3A22';
         g.beginPath(); g.moveTo(-14.6, 0.4); g.lineTo(15, 0.4); g.quadraticCurveTo(16.6, -0.8, 15, -2.4); g.lineTo(-14.2, -2.4); g.quadraticCurveTo(-15.4, -1, -14.6, 0.4); g.closePath(); g.fill();
+        // la tranche
         g.fillStyle = o.neuve ? lin(g, 0, -2.2, 0, 0, [[0, '#4A4A4C'], [1, '#2A2A2C']]) : lin(g, 0, -2.2, 0, 0, [[0, '#E0B888'], [1, '#B98C5C']]);
         g.beginPath(); g.moveTo(-14, -0.1); g.lineTo(14.6, -0.1); g.quadraticCurveTo(15.6, -1, 14.4, -2); g.lineTo(-13.6, -2); g.quadraticCurveTo(-14.6, -1, -14, -0.1); g.closePath(); g.fill();
         if (o.colle > 0) { g.fillStyle = `rgba(255,236,190,${0.35 * o.colle})`; g.fill(); }
         g.fillStyle = 'rgba(90,50,24,0.35)';
         g.fillRect(-6.8, -2, 0.5, 1.9);
-        g.fillStyle = '#D6B25C';
-        for (let k = 0; k < o.clous; k++) { g.beginPath(); g.arc(-12.5 + k * 2.5, -1.05, 0.38, 0, TAU); g.fill(); }
+        // le dessus (plus clair : il prend la lumière de la lampe), l'arête de devant
+        g.beginPath(); g.moveTo(-13.6, -2);
+        DESSUS.forEach(([x, h]) => g.lineTo(x, -2 - h));
+        g.lineTo(14.4, -2); g.closePath();
+        g.fillStyle = o.neuve ? lin(g, 0, -4.6, 0, -2, [[0, '#56565A'], [1, '#3C3C3F']]) : lin(g, 0, -4.6, 0, -2, [[0, '#F0D2A8'], [1, '#D9B282']]);
+        g.fill();
+        if (o.colle > 0) { g.fillStyle = `rgba(255,240,200,${0.5 * o.colle})`; g.fill(); }
+        g.strokeStyle = o.neuve ? 'rgba(255,255,255,0.18)' : 'rgba(255,244,222,0.7)'; g.lineWidth = 0.18;
+        g.beginPath(); g.moveTo(-13.4, -2.05); g.lineTo(14.2, -2.05); g.stroke();
+        // les clous plantés (la file du fond d'abord, derrière ; une semelle neuve collée par-dessus les cache)
+        if (!o.neuve) o.clous.slice().sort((a, b) => b[1] - a[1]).forEach((c) => { const [x, y] = piedClou(c); teteClou(g, x, y - 0.1); });
+        if (o.eclat > 0.02 && o.clous.length) { // l'éclat du dernier coup
+          const [x, y] = piedClou(o.clous[o.clous.length - 1]);
+          g.fillStyle = rad(g, x, y - 0.3, 2.4, [[0, `rgba(255,248,220,${0.8 * o.eclat})`], [1, 'rgba(255,248,220,0)']]);
+          g.fillRect(x - 2.4, y - 2.7, 4.8, 4.8);
+        }
+      },
+    });
+    // le clou qu'on plante : pris dans la coupelle, tenu du bout des doigts, planté debout, enfoncé en deux coups
+    objet('clou', {
+      x: 322, y: -101.6, a: 0, aMonde: 0, prise: [0, 0.7], auBout: true, visible: false, enfonce: 0,
+      dessin(g, o) { // la tête en 0, la tige vers +y (stylisée : 2,2 cm)
+        const L = 2.2 * (1 - o.enfonce);
+        if (L > 0.05) {
+          g.fillStyle = lin(g, -0.16, 0, 0.16, 0, [[0, '#4E5358'], [0.45, '#D4D8DB'], [1, '#5E6368']]);
+          g.beginPath(); g.moveTo(-0.15, 0); g.lineTo(0.15, 0); g.lineTo(0.05, L); g.lineTo(-0.05, L); g.closePath(); g.fill();
+        }
+        teteClou(g, 0, 0);
       },
     });
     objet('pinceau', {
@@ -1018,6 +1071,7 @@
       peindreClesVive();
       repere(K.D_LANE);
       forme.y = -123.5 + M.etabli.choc * 0.6;
+      { const c = OBJ.clou; if (c.plante) { c.x = forme.x + c.plante[0]; c.y = forme.y + c.plante[1] - 2.2 * (1 - c.enfonce); c.a = 0; } }
       planTable.forEach((o) => { if (!o.main && !(o.id === 'cleOrig' && M.cles.orig) && !(o.id === 'cleNeuve' && M.cles.neuve)) dessinerObjet(ctx, o); });
       jalon('meublesVifs');
       cl.dessiner(ctx, 'devant', objets);
@@ -1049,16 +1103,30 @@
     const tw = (ms, fn, ease, jeton, coupe) => horloge.tween(ms, fn, ease, jeton, coupe);
     const att = (ms, jeton) => horloge.attendre(ms, jeton);
     const mainDe = (c) => (c === 'D' ? S.mainD : S.mainG);
-    function mainLibre(cote) { const m = mainDe(cote); m.mode = 'libre'; m.coude = 0; m.angle = null; m.suit = null; m.pose = 'ouverte'; m.devant = false; }
-    function mainVers(cote, x, y, ms, { pose, angle, ease = E.io, jeton, devant, coude } = {}) {
+    function mainLibre(cote) { const m = mainDe(cote); m.mode = 'libre'; m.coude = 0; m.raccourci = 0; m.angle = null; m.suit = null; m.pose = 'ouverte'; m.devant = false; }
+    function mainVers(cote, x, y, ms, { pose, angle, ease = E.io, jeton, devant, coude, raccourci } = {}) {
       const m = mainDe(cote);
       m.mode = 'fixe'; m.suit = null;
       const x0 = m.x, y0 = m.y, a0 = m.angle == null ? null : m.angle, c0 = m.coude || 0, c1 = coude == null ? c0 : coude;
+      const r0 = m.raccourci || 0, r1 = raccourci == null ? r0 : raccourci;
       if (devant != null) m.devant = devant;
       return tw(ms, (e, p) => {
-        m.x = lerp(x0, x, e); m.y = lerp(y0, y, e); m.coude = lerp(c0, c1, e);
+        m.x = lerp(x0, x, e); m.y = lerp(y0, y, e); m.coude = lerp(c0, c1, e); m.raccourci = lerp(r0, r1, e);
         if (angle !== undefined) m.angle = angle == null ? null : a0 == null ? angle : lerp(a0, angle, e);
         if (pose && p >= 0.55) m.pose = pose;
+      }, ease, jeton);
+    }
+    const brasDe = (cote) => { const d = cl.dernier; return d && d.bras ? d.bras.find((b) => b.cote === cote) : null; };
+    /** amener le bout des doigts pincés en (x, y) : la cible de la main se corrige à chaque image (d'après le dernier dessin) */
+    function boutVers(cote, x, y, ms, { ease = E.io, jeton, coude, devant, angle } = {}) {
+      const m = mainDe(cote);
+      m.mode = 'fixe'; m.suit = null; m.pose = 'pince';
+      if (devant != null) m.devant = devant;
+      const x0 = m.x, y0 = m.y, a0 = m.angle, c0 = m.coude || 0, c1 = coude == null ? c0 : coude;
+      return tw(ms, (e) => {
+        const B = brasDe(cote), [bx, by] = B ? boutDe(B) : [m.x, m.y];
+        m.x = lerp(x0, x - (bx - m.x), e); m.y = lerp(y0, y - (by - m.y), e); m.coude = lerp(c0, c1, e);
+        if (angle !== undefined) m.angle = angle == null ? null : a0 == null ? angle : lerp(a0, angle, e);
       }, ease, jeton);
     }
     /** aller prendre un objet (sa prise, ou un point) */
@@ -1144,53 +1212,88 @@
        ====================================================================== */
     const angleMarteau = (a, ms, j, ease = E.io) => { const a0 = marteau.aMonde; return tw(ms, (e) => { marteau.aMonde = lerp(a0, a, e); }, ease, j); };
 
-    /** 1. Le marteau sur le pied de fer : les clous aux lèvres, un clou posé, deux coups, le rebond */
+    /** où mettre la main droite pour que la panne du marteau (tourné de a) tombe en (x, y) : la prise est au creux de
+        la main, à ~2,8 cm devant la cible de la main dans l'axe de l'avant-bras (d'après le dernier dessin) */
+    function mainPourPanne(x, y, a) {
+      const B = brasDe('D'), u = B ? B.angMain : -0.9, c = Math.cos(a), s = Math.sin(a);
+      const fx = 19.25, fy = 5.8; // la panne, depuis la prise (le manche)
+      return [x - (c * fx - s * fy) - Math.cos(u) * 2.8, y - (s * fx + c * fy) - Math.sin(u) * 2.8];
+    }
+    /** la chaussure suivante sur le pied de fer : un autre cuir, une semelle sans clous */
+    function chaussureSuivante() {
+      forme.clous = []; forme.eclat = 0;
+      const i = CUIRS.indexOf(forme.cuir);
+      forme.cuir = CUIRS[(i + 1 + Math.floor(RV() * (CUIRS.length - 1))) % CUIRS.length];
+    }
+    // de près, pendant qu'il cloue : le pied de fer, ses mains et sa tête penchée
+    const CADRE_CLOUS = { x: 303, d: 122, y: -128, f: 0.6 };
+
+    /** 1. Le marteau sur le pied de fer : la caméra s'approche ; pour chaque clou, la main gauche le prend dans la
+        coupelle, le plante debout au bord de la semelle, un petit coup pour qu'il tienne ; la main s'écarte et tient
+        la chaussure, un coup franc : la tête reste, rangée avec les autres le long de la demi-semelle */
     async function marteler(j) {
-      const st = STATIONS.etabli;
+      const st = STATIONS.etabli, clou = OBJ.clou;
+      if (forme.clous.length >= PLACES_CLOUS.length) chaussureSuivante();
       await marcher(st.x, j, st.face);
+      camGros = CADRE_CLOUS;
       await Promise.all([corps({ lean: 0.2 }, 400, E.io, j), tete({ pitch: 0.5, turn: 0 }, 400, E.io, j), regardVers(0, -0.4, 400, j)]);
-      await versObjet('D', marteau, 450, { pose: 'poing', devant: true, angle: -1.2, jeton: j });
+      // le marteau, pris par le manche, tenu prêt au-dessus du travail ; la main gauche tient le bout de la chaussure
+      await versObjet('D', marteau, 450, { pose: 'poing', devant: true, angle: null, coude: 0.4, jeton: j });
       prendre('D', marteau);
       son('bq-pose', { v: 0.5 });
-      await Promise.all([mainVers('D', 280, -131, 380, { angle: -1.65, jeton: j }), angleMarteau(-0.3, 380, j)]);
+      await Promise.all([
+        mainVers('D', 280, -128, 420, { coude: 0.4, raccourci: 0.75, jeton: j }), angleMarteau(-0.55, 420, j),
+        mainVers('G', forme.x + 12.5, forme.y - 2.2, 420, { pose: 'plate', devant: true, angle: Math.PI - 0.25, coude: 0.35, jeton: j }),
+      ]);
+      /** un coup sur (x, y) : l'élan (le poignet d'abord, la main à peine), le coup sec, le choc, le rebond */
+      const A_COUP = -0.35; // le marteau à l'impact : le manche monte un peu vers la tête
+      const coup = async (x, y, force, choc) => {
+        const [hx, hy] = mainPourPanne(x, y, A_COUP);
+        const lever = 170 + 190 * force;
+        await Promise.all([mainVers('D', hx + 1.5 * force, hy - 2 - 2 * force, lever, { ease: E.out, coude: 0.4, raccourci: 0.8, jeton: j }), angleMarteau(A_COUP - 0.5 * force - 0.05, lever, j, E.out)]);
+        await att(40 + RV() * 60, j);
+        const frappe = 80 + 25 * (1 - force);
+        await Promise.all([mainVers('D', hx, hy, frappe, { ease: E.in, jeton: j }), angleMarteau(A_COUP, frappe, j, E.in)]);
+        son('hammer', { gain: 0.22 + 0.45 * force });
+        M.etabli.choc = force;
+        choc();
+        await Promise.all([
+          mainVers('D', hx + 0.5, hy - 1 - 1.5 * force, 150, { ease: E.out, jeton: j }), angleMarteau(A_COUP - 0.2 * force, 150, j, E.out),
+          tw(230, (e) => { M.etabli.choc = force * (1 - e); forme.eclat = Math.max(0, forme.eclat - 0.05); }, E.out, j),
+        ]);
+      };
       const n = 3 + Math.floor(RV() * 2);
-      const sole = -126;
-      for (let i = 0; i < n; i++) {
-        // les clous : une pincée prise dans la coupelle, gardée aux lèvres ; la main les y reprend par le côté
-        const auxLevres = (ms) => { const [bx, by] = bouche(); return mainVers('G', bx + 10.5, by + 2, ms, { pose: 'pince', jeton: j, coude: 0.55, angle: Math.PI + 0.3 }); };
-        if (i === 0) {
-          await mainVers('G', 322, -102, 380, { pose: 'pince', devant: true, angle: null, jeton: j });
-          await att(160, j);
-          await Promise.all([auxLevres(440), tete({ pitch: 0.34, turn: 0.1 }, 400, E.io, j)]);
-          S.clous = 4;
+      for (let i = 0; i < n && forme.clous.length < PLACES_CLOUS.length; i++) {
+        const place = PLACES_CLOUS[forme.clous.length], pied = piedClou(place);
+        const nx = forme.x + pied[0], ny = forme.y + pied[1]; // où le clou entre
+        // un clou pris dans la coupelle, du bout des doigts
+        await Promise.all([boutVers('G', 322, -101.8, 430, { devant: true, coude: 0.2, angle: null, jeton: j }), tete({ pitch: 0.56, turn: 0.14 }, 380, E.io, j), regardVers(0.4, -0.5, 300, j)]);
+        clou.visible = true; clou.enfonce = 0; clou.plante = null;
+        prendre('G', clou);
+        son('bq-clou', { v: 0.45 });
+        await att(110, j);
+        // planté debout à sa place, la pointe sur la semelle
+        await Promise.all([boutVers('G', nx, ny - 2.2 + clou.prise[1], 460, { coude: 0.45, jeton: j }), tete({ pitch: 0.5, turn: 0.02 }, 400, E.io, j), regardVers(0.05, -0.45, 300, j)]);
+        lacher(clou);
+        clou.plante = pied;
+        await att(90, j);
+        // un petit coup : il tient ; les doigts s'ouvrent, la main va tenir le bout de la chaussure
+        await coup(nx, ny - 2.2, 0.35, () => { clou.enfonce = 0.5; son('bq-clou', { v: 0.6 }); });
+        await Promise.all([mainVers('G', forme.x + 12.5, forme.y - 2.2, 240, { pose: 'plate', angle: Math.PI - 0.25, coude: 0.35, jeton: j }), att(120, j)]);
+        // le coup franc : à fleur de semelle
+        await coup(nx, ny - 1.1, 1, () => {
+          clou.enfonce = 1; clou.visible = false; clou.plante = null;
+          forme.clous.push(place); forme.eclat = 1;
           son('bq-clou');
-          await att(160, j);
-        } else {
-          await Promise.all([auxLevres(300), tete({ pitch: 0.36, turn: 0.1 }, 260, E.io, j)]);
-        }
-        S.clous = Math.max(0, S.clous - 1);
-        const nx = 305 - i * 2.4;
-        await Promise.all([mainVers('G', nx + 3, sole - 1.6, 340, { jeton: j, coude: 0.2, angle: null }), tete({ pitch: 0.55, turn: 0.04 }, 340, E.io, j)]);
-        for (const force of [0.45, 1]) {
-          await Promise.all([mainVers('D', 268, -150 - force * 8, 260 + force * 140, { ease: E.out, jeton: j, coude: 0.75 }), angleMarteau(-1.2 - force * 0.25, 260 + force * 140, j, E.out)]);
-          await att(50 + RV() * 70, j);
-          await Promise.all([mainVers('D', nx - 19.5, sole - 5.4, 95, { ease: E.in, jeton: j, coude: 0.3 }), angleMarteau(0, 95, j, E.in)]);
-          son('hammer', { gain: 0.3 + 0.4 * force });
-          if (force > 0.6) { son('bq-clou'); forme.clous = Math.min(10, forme.clous + 1); }
-          M.etabli.choc = 1;
-          await Promise.all([
-            mainVers('D', nx - 21, sole - 11, 170, { ease: E.out, jeton: j }), angleMarteau(-0.28, 170, j, E.out),
-            tw(230, (e) => { M.etabli.choc = 1 - e; }, E.out, j),
-          ]);
-          if (force < 0.9) await mainVers('G', 318, -120, 170, { pose: 'ouverte', jeton: j });
-        }
-        if (RV() < 0.3) {
-          await Promise.all([tete({ pitch: 0.62, roll: -0.12 }, 360, E.io, j), corps({ lean: 0.28 }, 360, E.io, j)]);
-          await att(500, j);
+        });
+        if (RV() < 0.35) await coup(nx, ny, 0.55, () => { forme.eclat = 0.6; });
+        if (RV() < 0.25) { // on vérifie la ligne
+          await Promise.all([tete({ pitch: 0.62, roll: -0.12 }, 360, E.io, j), corps({ lean: 0.26 }, 360, E.io, j)]);
+          await att(420, j);
           await Promise.all([tete({ roll: 0, pitch: 0.5 }, 300, E.io, j), corps({ lean: 0.2 }, 300, E.io, j)]);
         }
       }
-      if (forme.clous >= 10) forme.clous = 0;
+      camGros = null;
       await ranger(j);
     }
 
@@ -1522,7 +1625,7 @@
       for (let k = 0; k < 2; k++) { await Promise.all([mainVers('D', 292, -127.5, 160, { jeton: j }), mainVers('G', 308, -127.5, 160, { jeton: j })]); M.etabli.choc = 0.5; await Promise.all([mainVers('D', 292, -129.5, 160, { jeton: j }), mainVers('G', 308, -129.5, 160, { jeton: j })]); M.etabli.choc = 0; }
       await ranger(j);
       lacher(se, se.maison); se.visible = true; se.colle = 0;
-      forme.neuve = false; // (la chaussure suivante)
+      forme.neuve = false; chaussureSuivante(); // (la chaussure suivante)
     }
 
     /** 8. Une pause : une gorgée de café, ou un ticket jaune écrit au comptoir */
@@ -1575,6 +1678,8 @@
     async function ranger(j, vite = 1) {
       const T = (ms) => Math.round(ms * vite);
       S.clous = 0;
+      camGros = null;
+      { const c = OBJ.clou; if (c.main) lacher(c, c.maison); c.visible = false; c.plante = null; c.enfonce = 0; }
       if (S.marche > 0.01) { const m0 = S.marche; await tw(T(220), (e) => { S.marche = m0 * (1 - e); }, E.out, j); S.marche = 0; }
       M.finisseuse.cible = 0; M.couture.cible = 0; M.cles.cible = 0; M.finisseuse.contact = null; M.cles.contact = null;
       voixNiveau('bq-meule', 0);
@@ -1725,13 +1830,14 @@
     }
     const camOff = { d: 0, t: 0 };
     let camLibre = null; // un cadrage imposé (l'établi de près)
+    let camGros = null; // le gros plan d'une activité (le clouage), après la conversation
     function majCamera(dt) {
       const k = 1 - Math.exp(-dt / 1000 * 2.6);
       if (camLibre) { cam.cx = camLibre.x; cam.cd = camLibre.d; cam.ct = tiltPour(camLibre.y, camLibre.d, camLibre.f); }
       else if (regardeNous) {
         cam.cx = S.x; cam.cd = 92;
         cam.ct = tiltPour(S.y - 172 + S.assis * 30, cam.cd, 0.25);
-      } else {
+      } else if (camGros) { cam.cx = camGros.x; cam.cd = camGros.d; cam.ct = tiltPour(camGros.y, camGros.d, camGros.f); } else {
         let st = enCours && ACTIVITES[enCours] && ACTIVITES[enCours].station ? STATIONS[ACTIVITES[enCours].station] : null;
         if (st && Math.abs(S.x - st.x) > 16) st = null; // (le cadrage de la machine, seulement une fois arrivé)
         const marche = S.marche > 0.05;
@@ -1990,6 +2096,8 @@
       faire(id) { if (!ACTIVITES[id] || reduit) return; force = id; if (!vivant) scene.jouer(); else if (!regardeNous) jeton.annule = true; },
       /** le temps de la scène à la main (labo, captures) : pause() d'abord, puis pas(ms) avance de ms et dessine */
       pas(ms = 33) { maj(ms); rendre(); placerCibles(); },
+      /** (labo) le dedans de la scène, à lire ou à régler à la main avant un pas(0) */
+      get labo() { return { S, OBJ, M, cam, prendre, lacher, tiltPour }; },
       get activites() { return Object.keys(ACTIVITES); },
       setNuit(on) { nuit = !!on; if (reduit) { nuitK = nuit ? 1 : 0; rendre(); } demander(); },
       perf: PERF,
@@ -1998,9 +2106,9 @@
     };
     function poseDepart() {
       S.x = STATIONS.etabli.x; S.yaw = 0; S.assis = 0; S.lean = 0.2; S.tete.turn = 0; S.tete.pitch = 0.5; S.regard = [0, -0.4]; S.sourire = 0; S.bouche = 0;
-      S.mainD.mode = 'fixe'; S.mainD.coude = 0.75; S.mainD.x = 268; S.mainD.y = -158; S.mainD.pose = 'poing'; S.mainD.angle = -1.65; S.mainD.devant = true;
-      prendre('D', marteau); marteau.aMonde = -1.35;
-      S.mainG.mode = 'fixe'; S.mainG.x = 306; S.mainG.y = -127.6; S.mainG.pose = 'pince'; S.mainG.devant = true;
+      S.mainD.mode = 'fixe'; S.mainD.coude = 0.4; S.mainD.raccourci = 0.75; S.mainD.x = 281; S.mainD.y = -128; S.mainD.pose = 'poing'; S.mainD.angle = null; S.mainD.devant = true;
+      prendre('D', marteau); marteau.aMonde = -0.6;
+      S.mainG.mode = 'fixe'; S.mainG.x = forme.x + 12.5; S.mainG.y = forme.y - 2.2; S.mainG.pose = 'plate'; S.mainG.angle = Math.PI - 0.25; S.mainG.coude = 0.35; S.mainG.devant = true;
       cam.x = cam.cx = STATIONS.etabli.cam; cam.d = cam.cd = STATIONS.etabli.zoom; cam.tilt = cam.ct = tiltPour(-172, cam.d, 0.31);
     }
     const indiceVu = () => CO.store && CO.store.get('boutique-indice', false);

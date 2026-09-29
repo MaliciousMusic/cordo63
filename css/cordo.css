@@ -154,12 +154,19 @@ svg use { pointer-events: none; }
 /* ======================================================================
    Vues (onglets)
    ====================================================================== */
-main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b) - var(--sous-barre)) 0; overflow: hidden; overflow: clip; }
+/* main va jusqu'en haut de l'écran (sous l'heure et l'encoche : la barre d'état est translucide) ; chaque vue
+   y étend son décor et garde ses boutons et ses textes sous --safe-t */
+main { position: fixed; inset: 0 0 calc(var(--tab-h) + var(--safe-b) - var(--sous-barre)) 0; overflow: hidden; overflow: clip; }
+/* sous l'heure, un voile d'ombre : l'heure et la batterie (blanches) se lisent sur tous les fonds */
+body::after {
+  content: ''; position: fixed; left: 0; right: 0; top: 0; z-index: 45; height: calc(var(--safe-t) * 1.3); pointer-events: none;
+  background: linear-gradient(180deg, rgba(24, 16, 10, .55), rgba(24, 16, 10, .32) 68%, rgba(24, 16, 10, 0));
+}
 .view { position: absolute; inset: 0; display: none; opacity: 0; transform: translateX(28px); transition: opacity .32s ease, transform .38s cubic-bezier(.2, .8, .2, 1); }
 .view.vue { display: block; }
 .view.is-left { transform: translateX(-28px); }
 .view.is-active { opacity: 1; transform: none; }
-.view-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scroll-padding-top: 58px; scrollbar-width: none; }
+.view-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scroll-padding-top: calc(58px + var(--safe-t)); scrollbar-width: none; }
 .view-scroll::-webkit-scrollbar, .sheet-panel::-webkit-scrollbar { display: none; }
 .view-scroll::after { content: ''; display: block; height: var(--sous-barre); } /* la fin du défilement reste au-dessus de la barre */
 .contenu { max-width: 600px; margin: 0 auto; padding: 22px 18px 40px; }
@@ -173,6 +180,7 @@ main { position: fixed; inset: var(--safe-t) 0 calc(var(--tab-h) + var(--safe-b)
 }
 .bandeau h2 { margin: 0; font-family: var(--large); font-stretch: 75%; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; font-size: 21px; line-height: 1.2; }
 .bandeau p { margin: 0; font-size: 13px; opacity: .88; }
+.view-scroll > .bandeau:first-child { padding-top: calc(12px + var(--safe-t)); }
 .bandeau-cuir { background: var(--cuir-fond); color: var(--fil); }
 .bandeau-cuir::after { /* la surpiqûre */
   content: ''; position: absolute; left: 8px; right: 8px; bottom: 5px; height: 1.2px;
@@ -250,7 +258,7 @@ html:not(.no-js) .tabbar:not(.brode-ko) .tab > svg, html:not(.no-js) .tabbar:not
 #accueil { --logo-l: min(78vw, 330px); --logo-h: calc(var(--logo-l) * .121 + 30px); }
 .scene {
   position: relative; width: 100%; overflow: hidden; background: #CFC6B2;
-  height: clamp(380px, calc(100dvh - var(--tab-h) - var(--safe-t) - var(--safe-b) - var(--logo-h) - 34px), min(150vw, 780px));
+  height: clamp(calc(380px + var(--safe-t)), calc(100dvh - var(--tab-h) - var(--safe-b) - var(--logo-h) - 34px), calc(min(150vw, 780px) + var(--safe-t)));
   --fondu: 90px;
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fondu)), rgba(0, 0, 0, .72) calc(100% - var(--fondu) * .55), rgba(0, 0, 0, .28) calc(100% - var(--fondu) * .22), transparent 100%);
   mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fondu)), rgba(0, 0, 0, .72) calc(100% - var(--fondu) * .55), rgba(0, 0, 0, .28) calc(100% - var(--fondu) * .22), transparent 100%);
@@ -336,13 +344,13 @@ html:not(.no-js) .tabbar:not(.brode-ko) .tab > svg, html:not(.no-js) .tabbar:not
 #services { display: none; flex-direction: column; }
 #services.vue { display: flex; }
 .etabli-haut {
-  position: relative; flex: none; height: clamp(250px, 46%, 520px); overflow: hidden;
+  position: relative; flex: none; height: calc(clamp(250px, 46% - var(--safe-t) * .46, 520px) + var(--safe-t)); overflow: hidden;
   background: #2A221D; box-shadow: 0 6px 14px -6px rgba(0, 0, 0, .45); z-index: 2;
 }
 .etabli-host { position: absolute; inset: 0; }
 .etabli-host canvas { width: 100%; height: 100%; }
 .eh-titre {
-  position: absolute; left: 0; top: 0; z-index: 3; margin: 0; padding: 9px 16px 8px 14px; border-radius: 0 0 12px 0;
+  position: absolute; left: 0; top: var(--safe-t); z-index: 3; margin: 0; padding: 9px 16px 8px 14px; border-radius: 0 12px 12px 0;
   background: var(--papier) var(--grain); color: var(--encre);
   font-family: var(--large); font-stretch: 75%; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; font-size: 17px;
   box-shadow: 0 4px 10px -4px rgba(0, 0, 0, .5);
@@ -367,7 +375,7 @@ html:not(.no-js) .tabbar:not(.brode-ko) .tab > svg, html:not(.no-js) .tabbar:not
   background: var(--papier); color: var(--encre); font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 99px; white-space: nowrap;
   box-shadow: 0 6px 14px -6px rgba(0, 0, 0, .6); animation: sv-in-b .3s ease;
 }
-#services .view-scroll { flex: 1; height: auto; min-height: 0; }
+#services .view-scroll { flex: 1; height: auto; min-height: 0; scroll-padding-top: 58px; }
 .rubriques {
   position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; overflow-x: auto; padding: 10px 14px; scrollbar-width: none;
   background: linear-gradient(180deg, var(--papier) 80%, rgba(244, 235, 220, 0));
@@ -713,12 +721,12 @@ html:not(.no-js) .tabbar:not(.brode-ko) .tab > svg, html:not(.no-js) .tabbar:not
 .sheet[hidden] { display: none; }
 .sheet-fond { position: absolute; inset: 0; background: rgba(30, 24, 20, .5); opacity: 0; transition: opacity .35s ease; }
 .sheet-panel {
-  position: absolute; left: 0; right: 0; bottom: 0; max-height: 88vh; overflow-y: auto; scrollbar-width: none; outline: none;
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: calc(100% - max(12vh, var(--safe-t) + 16px)); overflow-y: auto; scrollbar-width: none; outline: none;
   background: var(--papier) var(--grain); border-radius: 22px 22px 0 0; padding: 18px 20px calc(24px + var(--safe-b));
   transform: translateY(105%); transition: transform .42s cubic-bezier(.2, .9, .25, 1); max-width: 620px; margin: 0 auto;
   box-shadow: 0 -12px 40px -16px rgba(30, 24, 20, .5);
 }
-.sheet-haute .sheet-panel { height: 94vh; max-height: none; }
+.sheet-haute .sheet-panel { height: calc(100% - max(6vh, var(--safe-t) + 10px)); max-height: none; }
 .sheet.is-open .sheet-fond { opacity: 1; }
 .sheet.is-open .sheet-panel { transform: none; }
 .sheet-panel:focus { outline: none; }
@@ -790,7 +798,7 @@ html:not(.no-js) .tabbar:not(.brode-ko) .tab > svg, html:not(.no-js) .tabbar:not
    L'accueil : l'enseigne-soulier en tête, les lacets sous le logo
    (leur dessin et leurs mouvements : css/co-accueil.css, js/co-panneau.js, js/co-lacets.js)
    ====================================================================== */
-.panneau-host { position: absolute; top: 0; left: 0; right: 0; z-index: 30; height: 0; pointer-events: none; }
+.panneau-host { position: absolute; top: var(--safe-t); left: 0; right: 0; z-index: 30; height: 0; pointer-events: none; }
 .panneau-host > * { pointer-events: auto; }
 .panneau-repli {
   position: absolute; top: 8px; left: 50%; transform: translateX(-50%); margin: 0; white-space: nowrap; padding: 6px 14px; border-radius: 99px;
@@ -818,7 +826,7 @@ main.fondu .view { transform: none !important; transition: opacity .5s ease !imp
     radial-gradient(60% 40% at 50% 38%, rgba(255, 214, 150, .28), transparent 70%),
     linear-gradient(180deg, #6D6457 0 58%, #5A3E2B 58% 64%, #3A2A20 64%);
 }
-.boutique-haut { position: absolute; left: 10px; right: 10px; top: 10px; z-index: 6; display: flex; justify-content: space-between; pointer-events: none; }
+.boutique-haut { position: absolute; left: 10px; right: 10px; top: calc(10px + var(--safe-t)); z-index: 6; display: flex; justify-content: space-between; pointer-events: none; }
 /* une étiquette de papier cernée d'encre, son icône dans une pastille noire ; elle s'enfonce comme les autres boutons */
 .boutique-btn {
   pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 15px 0 6px; border: 2px solid var(--encre); border-radius: 99px; cursor: pointer;
@@ -888,7 +896,7 @@ main.fondu .view { transform: none !important; transition: opacity .5s ease !imp
 .film-plein[hidden] { display: none; }
 .film-plein .film-host { position: absolute; inset: 0; }
 .film-plein .film-host canvas { display: block; width: 100%; height: 100%; }
-.film-etapes { position: absolute; left: 12px; right: 12px; top: 58px; z-index: 2; display: flex; gap: 4px; margin: 0; padding: 0 0 26px; list-style: none; pointer-events: none; }
+.film-etapes { position: absolute; left: 12px; right: 12px; top: calc(58px + var(--safe-t)); z-index: 2; display: flex; gap: 4px; margin: 0; padding: 0 0 26px; list-style: none; pointer-events: none; }
 .film-etapes li { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 242, 226, .22); transition: background .3s ease; }
 .film-etapes li.fait { background: rgba(242, 210, 75, .55); }
 .film-etapes li.ici { background: var(--ticket); }
@@ -898,7 +906,7 @@ main.fondu .view { transform: none !important; transition: opacity .5s ease !imp
   color: var(--creme); text-shadow: 0 1px 6px rgba(0, 0, 0, .6); opacity: 0; transition: opacity .3s ease;
 }
 .film-etapes li.ici span { opacity: 1; }
-.film-fermer { position: absolute; left: 10px; top: 10px; z-index: 3; }
+.film-fermer { position: absolute; left: 10px; top: calc(10px + var(--safe-t)); z-index: 3; }
 
 .sheet-infos .process { margin-top: 0; }
 .infos-chapo { margin: -6px 0 20px; color: var(--encre-2); font-size: 14.5px; }

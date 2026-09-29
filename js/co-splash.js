@@ -881,6 +881,9 @@
       if (!el || !CO.splashDecide()) { racine.classList.remove('ouverture'); el && (el.hidden = true); resolve({ skipped: true }); return; }
       try { sessionStorage.setItem('co-intro', '1'); } catch (e) { /* navigation privée */ }
       racine.classList.add('ouverture');
+      // la barre du navigateur (Safari, Chrome) prend le brun de la toile le temps de l'ouverture
+      const meta = document.querySelector('meta[name="theme-color"]'), teinte = meta && meta.getAttribute('content');
+      if (meta) meta.setAttribute('content', '#1E1510');
       sons();
       el.hidden = false;
       // l'appli chargée (la page, ses polices, la devanture…) : la vague des cubes finit et « Entrer » paraît
@@ -1167,6 +1170,7 @@
         el.classList.add('part');
         clearTimeout(attente);
         setTimeout(() => { el.hidden = true; racine.classList.remove('ouverture'); el.classList.remove('part', 'lance'); if (badge) badge.classList.remove('on'); nettoyer(); }, 380);
+        if (meta && teinte) meta.setAttribute('content', teinte);
         const r = Object.assign({ revele: true }, opts);
         resolve(r);
         if (CO.emit) CO.emit('ouverture', r); // (les calculs lourds des autres onglets peuvent attendre ce signal)
