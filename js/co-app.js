@@ -362,35 +362,110 @@
     CO.store.set('astuce-vue', true);
   }
 
-  /* ---------- sur ordinateur : le logo, le QR code de la page ---------- */
+  /* ---------- sur ordinateur : l'appli dans un téléphone posé sur l'établi (css/co-bureau.css) ; à côté, la
+     présentation : le logo, le QR code de la page ; sur l'écran, l'heure de Paris ; sur le tapis, ses chiffres ---------- */
+  const mqTelephone = matchMedia('(min-width: 760px) and (min-height: 560px)'); // le téléphone sur l'établi (les seuils de css/co-bureau.css)
+  /** l'écran où vit l'appli, en coordonnées de la fenêtre : la fenêtre elle-même sur téléphone ; sur ordinateur,
+      l'écran du téléphone (pour ce qui se cale en position fixe sur la fenêtre, à la place d'innerWidth / innerHeight) */
+  CO.ecran = function () {
+    const e = document.getElementById('ecran');
+    if (e && mqTelephone.matches) {
+      const r = e.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+    }
+    return { left: 0, top: 0, right: innerWidth, bottom: innerHeight, width: innerWidth, height: innerHeight };
+  };
   function initBureau() {
     const lg = $('#accueil-logo');
     if (lg && CO.logo) lg.appendChild(CO.logo({ couleur: 'currentColor' }));
-    if (!matchMedia('(min-width: 1000px)').matches) return;
-    const b = $('#bureau-logo');
-    if (b && CO.logo) b.appendChild(CO.logo({ couleur: 'currentColor' }));
-    const q = $('#bureau-qr');
-    if (q && CO.Ticket) q.innerHTML = CO.Ticket.qr(location.href.split('#')[0].split('?')[0], { couleur: '#2B2420', fond: '#FFFCF6' });
+    let pose = false, horloge = 0;
+    // une fois, la première fois que la fenêtre est assez grande : rien de tout ça sur un téléphone
+    function poser() {
+      pose = true;
+      const b = $('#bureau-logo');
+      if (b && CO.logo) b.appendChild(CO.logo({ couleur: 'currentColor', phrase: true }));
+      // le QR : l'adresse de la page (sans # ni ?) ; en local, l'adresse publique (un téléphone n'ouvre pas localhost)
+      const local = !/^https?:$/.test(location.protocol) || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+      const canon = document.querySelector('link[rel="canonical"]');
+      const url = local && canon ? canon.href : location.origin + location.pathname;
+      const q = $('#bureau-qr');
+      if (q && CO.Ticket) q.innerHTML = CO.Ticket.qr(url, { couleur: '#2B2420', fond: '#FFFCF6' });
+      // les chiffres de la marge du tapis, un par centimètre (le tapis file hors de la fenêtre : on en met assez)
+      const t = $('#bureau-tapis');
+      if (t) {
+        let h = '';
+        for (let i = 0; i <= 60; i++) h += `<i class="h" style="--i:${i}">${i}</i>`;
+        for (let i = 1; i <= 36; i++) h += `<i class="v" style="--i:${i}">${i}</i>`;
+        t.innerHTML = h;
+      }
+      const bu = $('.bureau');
+      if (bu) bu.classList.add('pret');
+    }
+    // l'heure de Paris sur la barre d'état, remise à chaque minute ronde
+    const heure = $('#tel-heure');
+    function tic() {
+      clearTimeout(horloge);
+      if (!heure || !mqTelephone.matches) return;
+      const n = CO.parisNow();
+      heure.textContent = n.getHours() + ':' + String(n.getMinutes()).padStart(2, '0');
+      horloge = setTimeout(tic, 60500 - n.getSeconds() * 1000 - n.getMilliseconds());
+    }
+    // ce qui s'ajoute directement au <body> en position fixe, calé sur la fenêtre (le canvas des mains de
+    // js/co-clouage.js, la réponse qui s'envole de js/co-dialogue.js) : sur ordinateur, on le range dans l'écran
+    // du téléphone (rogné par ses bords, comme sur un téléphone), décalé de la place de l'écran dans la fenêtre
+    // (--ecran-x / --ecran-y sur l'élément, css/co-bureau.css) : ses coordonnées de fenêtre restent justes
+    const ecran = $('#ecran');
+    function caler(el) {
+      const r = ecran.getBoundingClientRect();
+      (el ? [el] : $$('.dans-ecran', ecran)).forEach((n) => { n.style.setProperty('--ecran-x', r.left + 'px'); n.style.setProperty('--ecran-y', r.top + 'px'); });
+    }
+    if (ecran && window.MutationObserver) {
+      new MutationObserver((ms) => {
+        if (!mqTelephone.matches) return;
+        ms.forEach((m) => m.addedNodes.forEach((n) => {
+          if (n.nodeType !== 1 || n.parentNode !== document.body || getComputedStyle(n).position !== 'fixed') return;
+          n.classList.add('dans-ecran');
+          caler(n);
+          ecran.appendChild(n);
+        }));
+      }).observe(document.body, { childList: true });
+      window.addEventListener('resize', () => { if (mqTelephone.matches) caler(); });
+    }
+    function suivre() {
+      if (mqTelephone.matches && !pose) poser();
+      tic();
+    }
+    suivre();
+    if (mqTelephone.addEventListener) mqTelephone.addEventListener('change', suivre); else if (mqTelephone.addListener) mqTelephone.addListener(suivre);
   }
 
   /* ---------- démarrage ---------- */
   async function init() {
     document.documentElement.classList.remove('no-js');
+    // l'ouverture d'abord : l'écran est déjà couvert de lacets (la toile, le fond de #splash, avant tout script) ;
+    // l'appli se prépare dessous ; une fois chargée (pret), la vague des cubes finit et « Entrer » paraît
+    let dire = null;
+    const pret = new Promise((r) => (dire = r));
+    const splash = CO.splash ? CO.splash({ pret }) : Promise.resolve({ skipped: true });
+    // pas d'un bloc : on rend la main au navigateur entre deux étapes (il peint, il répond)
+    const respire = () => (window.scheduler && scheduler.yield ? scheduler.yield() : new Promise((r) => setTimeout(r, 0)));
     initSound();
     initSheets();
     initTabs();
+    await respire();
     initPanneau();
     initHours();
+    await respire();
     initLacets();
     try { initBureau(); } catch (e) { console.warn('bureau', e); }
-    ['Onglets', 'Commandes', 'Suivi', 'Services', 'Deposer', 'Clous', 'Pro', 'Nous', 'Film', 'Atelier'].forEach((m) => {
+    for (const m of ['Onglets', 'Commandes', 'Suivi', 'Services', 'Deposer', 'Clous', 'Pro', 'Nous', 'Film', 'Atelier']) {
+      await respire();
       try { CO[m] && CO[m].init && CO[m].init(); } catch (e) { console.warn('module', m, e); }
-    });
+    }
     route(true);
     CO.on('view', (v) => { if (v === 'accueil') revenirRue(); });
     const fac = initFacade();
-    // l'appli est chargée quand la page et ses ressources, ses polices et la devanture sont là : l'ouverture
-    // (l'écran de chargement) tourne jusque-là
+    // l'appli est chargée quand la page et ses ressources, ses polices et la devanture sont là
     const page = new Promise((r) => (document.readyState === 'complete' ? r() : window.addEventListener('load', r, { once: true })));
     const polices = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
     // les images pré-rendues : les planches de l'enseigne, le décor de l'établi
@@ -398,8 +473,9 @@
       CO.Enseigne && CO.Enseigne.precharger ? CO.Enseigne.precharger(isNight()) : null,
       CO.Services && CO.Services.precharger ? CO.Services.precharger() : null,
     ].map((p) => (p ? p.catch(() => null) : null));
-    const pret = Promise.all([fac, page, polices, ...images]).catch(() => {});
-    const splash = CO.splash ? CO.splash({ pret }) : Promise.resolve({ skipped: true });
+    // « en coulisses » : l'appli est prête sous l'ouverture (ou à l'écran, sans ouverture) ; les préparations
+    // en temps mort peuvent commencer
+    Promise.all([fac, page, polices, ...images]).catch(() => {}).then(() => { dire(); CO.emit('coulisses'); });
     // l'enseigne se pose dès que la devanture est là (cachée : elle entre en scène une fois l'appli dévoilée)
     const ens = fac.then((f) => (f ? initEnseigne() : null));
     const [f, sp] = await Promise.all([fac, splash]);

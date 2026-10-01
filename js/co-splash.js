@@ -2,8 +2,11 @@
    Cordo 63 — l'ouverture : l'écran lacé, puis délacé
    L'ouverture est aussi l'écran de chargement : elle couvre tout l'écran dès la première image (un
    script dans le <head> pose html.ouverture ; dessous, un fond d'établi sombre, opaque : l'appli qui se
-   construit ne se voit pas). Une vingtaine de lacets plats de toutes les couleurs de la boutique viennent
-   lacer l'écran : une toile serrée, dessus, dessous. Au milieu, deux lacets enfilés de cubes de bois
+   construit ne se voit pas). Le premier état de l'écran, avant tout script, c'est déjà la toile : une
+   vingtaine de lacets plats de toutes les couleurs de la boutique, dessus, dessous (le fond de #splash
+   est cette toile en image, assets/img/lacis.webp, rendue par tools/render/lacis.html avec ce même code ;
+   le canevas la relaie sans que rien ne bouge : même réseau, centré sur l'écran, même graine, et entre
+   les mailles, l'établi sombre). Au milieu, deux lacets enfilés de cubes de bois
    lettrés, les perles des enfants : « CORDO 63 » sur un lacet rouge, et plus petit, « PAR CLÉMENT PETIT »
    sur un lacet crème, replié en deux rangs. Ils s'enfilent : le lacet avance d'un bout à l'autre, chaque
    cube paraît quand le ferret atteint son trou. Puis, tant que l'appli se prépare, les cubes tournent un
@@ -28,6 +31,8 @@
    ne sont qu'une image.
      CO.splash({ pret }) → Promise, résolue quand l'appli est dévoilée : { revele: true } (ou { skipped: true })
                           pret : une Promise, résolue quand l'appli est chargée (sinon : tout de suite)
+     CO.splash.toile.preparer(ctx, W, H, dpr) / .peindre(ctx, toile) : la toile au repos (l'image du fond)
+     CO.splash.perles : les cubes, leurs ombres, le lacet fin et ses ferrets (l'icône de l'appli)
    ========================================================================== */
 (function () {
   'use strict';
@@ -44,11 +49,13 @@
   // les couleurs des lacets de l'accueil, et quelques autres de la boutique
   const COULEURS = ['#F2D24B', '#8A927B', '#E03A2E', '#F4EEE2', '#3A2A20', '#232326', '#A8743F', '#56705A', '#FBF8F1', '#CDAE80'];
   const ANGLE = (55 * Math.PI) / 180; // la toile : deux familles de diagonales, à ±55°
-  const PAR_FAMILLE = 12;
+  // la toile : un réseau fixe, centré sur l'écran (le même sur tous les écrans, et dans l'image du fond), une
+  // graine fixe ; des lacets assez longs pour une tablette
+  const TOILE = { graine: 63, pas: 70, L: 1600, K: 24 };
   const SERRE = 0.8; // la largeur d'un lacet de la toile, rapportée à l'écart entre deux lacets (on voit les mailles)
   // le bas de l'écran, vu depuis un lacet de la toile : le même pour les deux familles, la seconde étant posée en miroir
   const OMBRE = [Math.sin(ANGLE), Math.cos(ANGLE)];
-  const DUREE_TIRE = 430, DUREE_ENTREE = 460, DUREE_PERLES = 480;
+  const DUREE_TIRE = 430, DUREE_PERLES = 480;
   const lent = () => CO.ralenti || 1; // le ralenti des labos et des captures (CO.ralenti = 8)
   // les cubes : les couleurs vives des perles d'enfant, et le bois brut (null)
   const CUBES = [[245, 196, 38], [64, 166, 226], [80, 178, 76], [229, 68, 48], [240, 128, 172], [246, 138, 34], null];
@@ -358,42 +365,50 @@
     return { motif, hT, mat: new DOMMatrix([P / tw, 0, 0, (2 * hT) / th, 0, -hT]) };
   }
 
-  /* le croisillon : deux familles de diagonales qui couvrent tout l'écran, un peu irrégulières
-     (un rien d'angle, d'écart et de largeur en plus ou en moins) */
-  function lacis(W, H, rng) {
-    const cx = W / 2, cy = H / 2;
-    const fams = [ANGLE, -ANGLE].map((a) => {
-      const d = [Math.cos(a), Math.sin(a)], nrm = [-d[1], d[0]];
-      const E = Math.abs(W * nrm[0]) + Math.abs(H * nrm[1]);
-      return { a, d, nrm, s: E / (PAR_FAMILLE - 0.6) };
-    });
-    const w = Math.min(fams[0].s, fams[1].s) * SERRE;
-    const long = Math.abs(W * Math.cos(ANGLE)) + Math.abs(H * Math.sin(ANGLE)); // la plus longue corde
-    const L = long + w * 2.6;
-    const lacets = [];
-    fams.forEach((F, f) => {
-      for (let i = 0; i < PAR_FAMILLE; i++) {
-        const a = F.a + (rng() - 0.5) * 0.012;
-        const d = [Math.cos(a), Math.sin(a)], nrm = [-d[1], d[0]];
-        const off = (i - (PAR_FAMILLE - 1) / 2) * F.s + (rng() - 0.5) * F.s * 0.07;
-        const c = [cx + F.nrm[0] * off, cy + F.nrm[1] * off];
-        const glisse = (rng() - 0.5) * w * 2.2; // les bouts ne tombent pas tous au même endroit : des ferrets pointent au bord
-        const t0 = -(L / 2 + glisse);
-        lacets.push({ f, i, d, nrm, c, t0, debut: [c[0] + d[0] * t0, c[1] + d[1] * t0], ep: 0.94 + rng() * 0.12, o: 0, parti: false, sens: rng() < 0.5 ? 1 : -1, miroir: f === 1, phase: 0 });
-      }
-    });
-    // les couleurs : distribuées d'un paquet mélangé (chacune deux ou trois fois), jamais deux voisines pareilles
-    const paquet = [];
-    while (paquet.length < lacets.length + COULEURS.length) {
+  /* les couleurs de la toile : une table fixe (rang de lacet → couleur), tirée d'un paquet mélangé (chacune
+     autant de fois), jamais deux voisines pareilles ni la même que le lacet de même rang de l'autre famille */
+  let TABLE = null;
+  function tableCouleurs() {
+    if (TABLE) return TABLE;
+    const r = CO.rng(TOILE.graine), n = 2 * TOILE.K + 1, paquet = [];
+    while (paquet.length < 2 * n + COULEURS.length) {
       const tour = COULEURS.map((c, i) => i);
-      for (let i = tour.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [tour[i], tour[j]] = [tour[j], tour[i]]; }
+      for (let i = tour.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [tour[i], tour[j]] = [tour[j], tour[i]]; }
       paquet.push(...tour);
     }
-    lacets.forEach((l, k) => {
-      const voisin = k % PAR_FAMILLE ? lacets[k - 1].ci : -1, vis = k >= PAR_FAMILLE ? lacets[k - PAR_FAMILLE].ci : -1;
-      let j = 0;
-      while (j < paquet.length - 1 && (paquet[j] === voisin || paquet[j] === vis)) j++;
-      l.ci = paquet.splice(j, 1)[0];
+    TABLE = [[], []];
+    for (let f = 0; f < 2; f++) {
+      for (let k = 0; k < n; k++) {
+        const voisin = k ? TABLE[f][k - 1] : -1, vis = f ? TABLE[0][k] : -1;
+        let j = 0;
+        while (j < paquet.length - 1 && (paquet[j] === voisin || paquet[j] === vis)) j++;
+        TABLE[f][k] = paquet.splice(j, 1)[0];
+      }
+    }
+    return TABLE;
+  }
+
+  /* le croisillon : deux familles de diagonales, un peu irrégulières (un rien d'angle, d'écart et de largeur en
+     plus ou en moins), autant qu'il en faut pour couvrir l'écran ; chaque lacet tient son hasard de son rang
+     (sa propre graine) : un écran plus grand en montre plus, jamais d'autres */
+  function lacis(W, H) {
+    const cx = W / 2, cy = H / 2, s = TOILE.pas, w = s * SERRE, L = TOILE.L, table = tableCouleurs();
+    const fams = [ANGLE, -ANGLE].map((a) => { const d = [Math.cos(a), Math.sin(a)]; return { a, d, nrm: [-d[1], d[0]], s }; });
+    const lacets = [];
+    fams.forEach((F, f) => {
+      const E = Math.abs(W * F.nrm[0]) + Math.abs(H * F.nrm[1]);
+      const K = Math.min(TOILE.K, Math.ceil(E / (2 * s)) + 1);
+      for (let i = -K; i <= K; i++) {
+        if (Math.abs(i * s) > E / 2 + w) continue; // (hors de l'écran)
+        const r = CO.rng(TOILE.graine * 7919 + f * 1013 + (i + TOILE.K) * 37);
+        const a = F.a + (r() - 0.5) * 0.012;
+        const d = [Math.cos(a), Math.sin(a)], nrm = [-d[1], d[0]];
+        const off = i * s + (r() - 0.5) * s * 0.07;
+        const c = [cx + F.nrm[0] * off, cy + F.nrm[1] * off];
+        const glisse = (r() - 0.5) * w * 2.2;
+        const t0 = -(L / 2 + glisse);
+        lacets.push({ f, i, d, nrm, c, t0, debut: [c[0] + d[0] * t0, c[1] + d[1] * t0], ep: 0.94 + r() * 0.12, o: 0, parti: false, sens: r() < 0.5 ? 1 : -1, miroir: f === 1, phase: 0, ci: table[f][i + TOILE.K] });
+      }
     });
     // les croisements (armure toile : un sur deux) : les losanges où la première famille passe dessus,
     // et la phase de la lumière de chaque lacet (son croisement « dessus » le plus proche du milieu)
@@ -405,7 +420,7 @@
     };
     const onde = w * 0.05; // le flottement de la ligne et du bord
     const sm = w * 0.4, portee = w * 0.3; // l'ombre du lacet du dessus ; celle du lacet du dessous, à recouvrir
-    const A = lacets.filter((l) => l.f === 0), B = lacets.filter((l) => l.f === 1);
+    const A = lacets.filter((l) => l.f === 0), B = lacets.filter((l) => l.f === 1); // (A dessus quand i + j est pair)
     const phases = new Map();
     lacets.forEach((l) => phases.set(l, Infinity));
     A.forEach((a) => {
@@ -506,21 +521,23 @@
     [0.09, 0.16, 0.25].forEach((a, i) => { g.strokeStyle = `rgba(110,64,26,${(a * force).toFixed(3)})`; g.lineWidth = 0.45 + i * 0.3; g.stroke(paquets[i]); });
   }
   const CAPS = new Map();
-  // une lettre au milieu d'une face (repère de la face, de -h à h) : capitale grasse, noire
-  function lettre(g, ch, h, police, alpha) {
+  // une lettre au milieu d'une face (repère de la face, de -h à h) : capitale grasse, noire. taille : la
+  // hauteur des capitales (rapportée au côté), largeur : la plus large permise ; corps : le corps du dessin
+  // (la police a une taille optique : petit corps, lettres plus larges et plus ouvertes, pour l'icône)
+  function lettre(g, ch, h, police, alpha, taille = 0.6, largeur = 0.8, corps = 0) {
     if (!ch || ch === ' ') return;
     g.save();
-    const ref = h * 2;
-    g.font = `800 ${ref.toFixed(1)}px ${police}`;
+    const ref = h * 2, fp = corps || ref;
+    g.font = `800 ${fp.toFixed(1)}px ${police}`;
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-    const cle = police + ref.toFixed(1);
-    if (!CAPS.has(cle)) CAPS.set(cle, g.measureText('H').actualBoundingBoxAscent || ref * 0.7);
+    const cle = police + fp.toFixed(1);
+    if (!CAPS.has(cle)) CAPS.set(cle, g.measureText('H').actualBoundingBoxAscent || fp * 0.7);
     const capH = CAPS.get(cle);
     const m = g.measureText(ch);
     const asc = m.actualBoundingBoxAscent != null ? m.actualBoundingBoxAscent : capH, desc = m.actualBoundingBoxDescent || 0;
     const gau = m.actualBoundingBoxLeft != null ? m.actualBoundingBoxLeft : 0, dro = m.actualBoundingBoxRight != null ? m.actualBoundingBoxRight : m.width;
-    let k = (ref * 0.6) / capH;
-    k *= Math.min(1, (ref * 0.84) / ((asc + desc) * k), (ref * 0.8) / ((gau + dro) * k));
+    let k = (ref * taille) / capH;
+    k *= Math.min(1, (ref * 0.84) / ((asc + desc) * k), (ref * largeur) / ((gau + dro) * k));
     g.scale(k, k);
     g.globalAlpha = alpha;
     g.fillStyle = ENCRE;
@@ -546,7 +563,8 @@
   // arrondies qui prennent ou perdent la lumière, lettre ou trou). Le hasard de chaque face vient de la graine
   // du cube : quand il tourne, ses veines et son usure ne changent pas d'une image à l'autre. cible : un
   // canvas à réutiliser (le cube qui tourne, redessiné à chaque image), sinon un neuf. ref : la lumière de
-  // la face avant au repos (les faces gardent leur teinte en tournant).
+  // la face avant au repos (les faces gardent leur teinte en tournant). Pour l'icône, o peut grossir la lettre
+  // (taille, largeur, corps), pâlir celle du dessus (dessusAlpha), ôter l'usure (usure: false), épaissir le trait.
   function dessinerCube(geo, o, dpr, police, rng, cible, ref) {
     const { s, h, R, coque, faces } = geo;
     const r = s * 0.12, marge = 2;
@@ -586,8 +604,8 @@
         const gr = g.createLinearGradient(0, -h, 0, h);
         gr.addColorStop(0.55, 'rgba(24,14,6,0)'); gr.addColorStop(1, 'rgba(24,14,6,.12)');
         g.fillStyle = gr; g.fillRect(-h, -h, 2 * h, 2 * h);
-        lettre(g, o.lettre, h, police, 0.94);
-        if (!o.bois) usure(g, h, rf);
+        lettre(g, o.lettre, h, police, 0.94, o.taille, o.largeur, o.corps);
+        if (!o.bois && o.usure !== false) usure(g, h, rf);
         // le vernis accroche la lumière sur l'arête du dessus
         g.beginPath(); g.moveTo(-h + r, -h + 0.9); g.lineTo(h - r, -h + 0.9);
         g.strokeStyle = o.bois ? 'rgba(255,248,230,.3)' : 'rgba(255,255,255,.42)'; g.lineWidth = 1; g.stroke();
@@ -596,7 +614,7 @@
         gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,.14)');
         g.fillStyle = gr; g.fillRect(-h, -h, 2 * h, 2 * h);
         g.rotate((o.tour * Math.PI) / 2);
-        lettre(g, o.dessus, h * 0.84, police, 0.72);
+        lettre(g, o.dessus, h * 0.84, police, o.dessusAlpha == null ? 0.72 : o.dessusAlpha, undefined, undefined, o.corps);
       } else if (F.nom === 'arriere' || F.nom === 'dessous') { // on ne les voit que quand le cube tourne
         lettre(g, F.nom === 'arriere' ? o.arriere : o.dessous, h, police, 0.9);
         if (!o.bois) usure(g, h, rf);
@@ -604,7 +622,7 @@
       g.restore();
     });
     g.setTransform(dpr, 0, 0, dpr, dpr * cx, dpr * cy);
-    g.beginPath(); arrondi(g, coque, r); g.strokeStyle = 'rgba(30,18,8,.4)'; g.lineWidth = 0.7; g.stroke();
+    g.beginPath(); arrondi(g, coque, r); g.strokeStyle = 'rgba(30,18,8,.4)'; g.lineWidth = o.trait || 0.7; g.stroke();
     return { cv, cx, cy, w: lw, h: lh };
   }
   function ombreImage(s, dpr) { // l'ombre douce d'un cube, sur ce qui est dessous
@@ -864,6 +882,60 @@
   const rebond = (p) => { const c = 1.5; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
 
   /* ======================================================================
+     la toile : préparée une fois (les images des lacets ne dépendent pas de l'écran), peinte d'un coup ;
+     la même pour le canevas de l'ouverture et pour l'image du fond (tools/render/lacis.html)
+     ====================================================================== */
+  const IMAGES = new Map(); // densité → images des lacets : un changement de taille de l'écran ne les refait pas
+  function preparerToile(ctx, W, H, dpr) {
+    const G = lacis(W, H), di = Math.min(1.5, dpr);
+    let images = IMAGES.get(di);
+    if (!images) {
+      const r = CO.rng(TOILE.graine + 1); // (toujours dans le même ordre : la tresse, puis chaque couleur)
+      const T = tresses(G.w, di, r);
+      images = COULEURS.map((c) => lacetImage(c, G.L, G.w, di, r, T));
+      IMAGES.set(di, images);
+    }
+    return { G, images, motif: motifCroisements(ctx, G.w, G.Delta, G.croise), dpr };
+  }
+  function peindreToile(ctx, t) {
+    const { G, images, motif, dpr } = t;
+    const poser = (l) => {
+      const im = images[l.ci];
+      const u = l.miroir ? l.o + G.L : l.o;
+      const ox = l.debut[0] + l.d[0] * u, oy = l.debut[1] + l.d[1] * u;
+      const ux = l.miroir ? -l.d[0] : l.d[0], uy = l.miroir ? -l.d[1] : l.d[1];
+      ctx.setTransform(dpr * ux, dpr * uy, dpr * l.nrm[0] * l.ep, dpr * l.nrm[1] * l.ep, dpr * ox, dpr * oy);
+      ctx.drawImage(im.cv, -im.m, -im.m - im.w / 2, im.L + 2 * im.m, im.w + 2 * im.m);
+    };
+    // la lumière des croisements, calée sur la ligne du lacet (seulement là où il est encore)
+    const ombrer = (l) => {
+      if (!motif) return;
+      let a = l.t0 + l.o + G.w * 1.1, b = l.t0 + l.o + G.L - G.w * 1.1;
+      if (l.miroir) { const x = a; a = -b; b = -x; }
+      if (b <= a) return;
+      const ux = l.miroir ? -l.d[0] : l.d[0], uy = l.miroir ? -l.d[1] : l.d[1];
+      ctx.setTransform(dpr * ux, dpr * uy, dpr * l.nrm[0] * l.ep, dpr * l.nrm[1] * l.ep, dpr * l.c[0], dpr * l.c[1]);
+      motif.mat.e = l.phase;
+      motif.motif.setTransform(motif.mat);
+      ctx.fillStyle = motif.motif;
+      const hw = G.w * 0.485;
+      ctx.fillRect(a, -hw, b - a, 2 * hw);
+    };
+    const L = G.lacets;
+    L.forEach((l) => { if (l.f === 0 && !l.parti) { poser(l); ombrer(l); } });
+    L.forEach((l) => { if (l.f === 1 && !l.parti) { poser(l); ombrer(l); } });
+    L.forEach((l) => { // les croisements où la première famille passe dessus
+      if (l.f !== 0 || l.parti) return;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clip(l.dessus);
+      poser(l);
+      ombrer(l);
+      ctx.restore();
+    });
+  }
+
+  /* ======================================================================
      CO.splash
      ====================================================================== */
   /** l'ouverture joue-t-elle ? Une fois par visite ; ?intro la rejoue, ?nointro la saute. (Le même calcul que le
@@ -904,7 +976,7 @@
         .catch(() => {}).then(() => { policePrete = true; });
 
       /* le dessin */
-      let W = 0, H = 0, dpr = 1, G = null, images = [], motif = null, plan = null;
+      let W = 0, H = 0, dpr = 1, G = null, toile = null, plan = null;
       function preparer() {
         W = el.clientWidth || innerWidth; H = el.clientHeight || innerHeight;
         dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -916,12 +988,9 @@
         }
         if (!ctx) return;
         cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-        G = lacis(W, H, rng);
         // une image par couleur, à 1,5x au plus (des lacets larges : la trame reste nette, la mémoire raisonnable)
-        const di = Math.min(1.5, dpr);
-        const T = tresses(G.w, di, rng);
-        images = COULEURS.map((c) => lacetImage(c, G.L, G.w, di, rng, T));
-        motif = motifCroisements(ctx, G.w, G.Delta, G.croise);
+        toile = preparerToile(ctx, W, H, dpr);
+        G = toile.G;
       }
       // les images des perles : quelques cubes à la fois (24 ms au plus : d'un coup sur un bon téléphone), le
       // premier morceau tout de suite ; puis l'image du repos. ensuite() quand tout est prêt.
@@ -957,28 +1026,6 @@
         };
         etape();
       }
-      function poser(l) {
-        const im = images[l.ci];
-        const t = l.miroir ? l.o + G.L : l.o;
-        const ox = l.debut[0] + l.d[0] * t, oy = l.debut[1] + l.d[1] * t;
-        const ux = l.miroir ? -l.d[0] : l.d[0], uy = l.miroir ? -l.d[1] : l.d[1];
-        ctx.setTransform(dpr * ux, dpr * uy, dpr * l.nrm[0] * l.ep, dpr * l.nrm[1] * l.ep, dpr * ox, dpr * oy);
-        ctx.drawImage(im.cv, -im.m, -im.m - im.w / 2, im.L + 2 * im.m, im.w + 2 * im.m);
-      }
-      // la lumière des croisements, calée sur la ligne du lacet (seulement là où il est encore)
-      function ombrer(l) {
-        if (!motif) return;
-        let a = l.t0 + l.o + G.w * 1.1, b = l.t0 + l.o + G.L - G.w * 1.1;
-        if (l.miroir) { const t = a; a = -b; b = -t; }
-        if (b <= a) return;
-        const ux = l.miroir ? -l.d[0] : l.d[0], uy = l.miroir ? -l.d[1] : l.d[1];
-        ctx.setTransform(dpr * ux, dpr * uy, dpr * l.nrm[0] * l.ep, dpr * l.nrm[1] * l.ep, dpr * l.c[0], dpr * l.c[1]);
-        motif.mat.e = l.phase;
-        motif.motif.setTransform(motif.mat);
-        ctx.fillStyle = motif.motif;
-        const hw = G.w * 0.485;
-        ctx.fillRect(a, -hw, b - a, 2 * hw);
-      }
       function perles(now) {
         if (!plan || !plan.pret) return 0;
         const tourne = plan.lacets.some((lc) => lc.cubes.some((cb) => cb.vue));
@@ -1011,18 +1058,7 @@
           tombent = perles(now || performance.now());
           return;
         }
-        const L = G.lacets;
-        L.forEach((l) => { if (l.f === 0 && !l.parti) { poser(l); ombrer(l); } });
-        L.forEach((l) => { if (l.f === 1 && !l.parti) { poser(l); ombrer(l); } });
-        L.forEach((l) => { // les croisements où la première famille passe dessus
-          if (l.f !== 0 || l.parti) return;
-          ctx.save();
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          ctx.clip(l.dessus);
-          poser(l);
-          ombrer(l);
-          ctx.restore();
-        });
+        peindreToile(ctx, toile);
         if (G.fixe && !G.cache) { // elle vient de se poser : on la garde en image (rien ne bouge plus sous les perles)
           const c = document.createElement('canvas');
           c.width = cv.width; c.height = cv.height;
@@ -1044,23 +1080,6 @@
       }
       const bouger = (m) => { mouvements.add(m); if (!raf) raf = requestAnimationFrame(image); };
 
-      // l'arrivée : chaque lacet entre par un bout et vient se poser (l'appli se couvre)
-      function entree() {
-        if (!G) return;
-        const t0 = performance.now(), ral = lent();
-        G.lacets.forEach((l) => {
-          l.o = -l.sens * (G.L + 40);
-          const retard = rng() * 300 + (l.f ? 60 : 0);
-          bouger((now) => {
-            const p = clamp((now - t0 - retard * ral) / (DUREE_ENTREE * ral), 0, 1);
-            const e = 1 - Math.pow(1 - p, 3);
-            l.o = -l.sens * (G.L + 40) * (1 - e);
-            return p < 1;
-          });
-        });
-        const g0 = G;
-        bouger(() => { if (G !== g0) return false; if (g0.lacets.every((l) => l.o === 0)) { g0.fixe = true; return false; } return true; });
-      }
       // l'enfilage : le lacet avance d'un bout à l'autre (« CORDO 63 » depuis sa queue, l'autre depuis le bord),
       // et chaque cube paraît quand le ferret atteint son trou (il grossit en place, un petit rebond)
       function entreePerles(t0) {
@@ -1162,7 +1181,8 @@
         window.removeEventListener('resize', surTaille);
         el.removeEventListener('pointerdown', surToucher);
         if (cv) { cv.width = 0; cv.height = 0; }
-        images = []; G = null; plan = null; motif = null;
+        toile = null; G = null; plan = null;
+        IMAGES.clear();
       }
       function partir(opts) {
         if (fini) return;
@@ -1205,7 +1225,9 @@
           sonsA.push([at(k), 'sp-zip', { k, v: 0.9 }]);
           v.forEach((l, j) => {
             const t1 = quand + j * 24 * ral;
-            const o0 = l.o, D = G.L * 1.05 + 60;
+            // juste assez pour que sa queue (et son ferret) traverse l'écran et sorte
+            const tc = [[0, 0], [W, 0], [0, H], [W, H]].map(([x, y]) => (x - l.c[0]) * l.d[0] + (y - l.c[1]) * l.d[1]);
+            const o0 = l.o, D = (l.sens > 0 ? Math.max(...tc) - l.t0 : l.t0 + G.L - Math.min(...tc)) + 30;
             bouger((now) => {
               const p = clamp((now - debut - t1) / (DUREE_TIRE * ral), 0, 1);
               if (p <= 0) return true;
@@ -1291,20 +1313,19 @@
       }
       window.addEventListener('resize', surTaille);
 
-      // on prépare à la première image : l'arrivée part de lacets hors de l'écran, rien ne presse, et la
-      // première mise en page de l'appli se fait à son heure (pas au milieu de son initialisation)
+      // la toile est déjà là (le fond de #splash, la même en image) : à la première image, le canevas la relaie,
+      // rien ne bouge ; puis les perles s'enfilent, et tournent tant que l'appli se prépare
       requestAnimationFrame(() => {
         if (fini) return;
         preparer();
+        if (G) G.fixe = true;
+        dessiner();
         if (reduit || !ctx) {
-          if (G) G.fixe = true;
-          dessiner();
           chargement(0);
           pret.then(() => { if (!fini && !lance) perlesImages(() => dessiner()); });
           return;
         }
         const tInit = performance.now();
-        entree();
         // les perles tardent (la police) : les boutons viennent quand même, l'appli chargée
         const secours = setTimeout(() => { if (!plan || !plan.pret) chargement(0); }, 2500);
         pret.then(() => {
@@ -1321,4 +1342,8 @@
       });
     });
   };
+  // la même main pour l'icône de l'appli (tools/render/icone.html) : les cubes, leurs ombres, le lacet fin, ses ferrets
+  CO.splash.perles = { CUBES, BOIS, ENCRE, geomCube, dessinerCube, ombreImage, cordon, ferretPerle, rrect };
+  // et pour l'image de la toile au repos, le fond de #splash (tools/render/lacis.html) : le même code
+  CO.splash.toile = { preparer: preparerToile, peindre: peindreToile };
 })();

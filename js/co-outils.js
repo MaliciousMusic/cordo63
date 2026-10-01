@@ -39,14 +39,18 @@
      ====================================================================== */
   /* polices (celles du site si elles sont là) */
   /* les polices : celles du site, lues dans ses variables CSS (--chiffres, sinon --sans ; --stylo pour l'écriture
-     à la main), jamais écrites en dur ici — le site peut en changer. Relues à chaque modèle. */
+     à la main), jamais écrites en dur ici — le site peut en changer. Lues une fois trouvées (getComputedStyle
+     recalcule tout le style de la page s'il a changé : à chaque clé de sprite, c'était une tâche longue). */
+  const FAMILLES = new Map();
   function famille(v, repli) {
+    const k = v.join(',');
+    if (FAMILLES.has(k)) return FAMILLES.get(k);
     try {
       if (typeof document !== 'undefined' && window.getComputedStyle) {
         const cs = getComputedStyle(document.documentElement);
         for (const nom of v) {
           const f = cs.getPropertyValue(nom).trim();
-          if (f) return f;
+          if (f) { FAMILLES.set(k, f); return f; }
         }
       }
     } catch (e) { /* hors page */ }
@@ -57,11 +61,15 @@
     get stylo() { return famille(['--stylo'], 'cursive'); },
   };
   /** l'empreinte des polices (dans les clés du cache : si le site change de police, on recalcule) */
+  let empreinte = null, empreinteDe = '';
   function empreinteP() {
     const t = POLICE.chiffres + '|' + POLICE.stylo;
+    if (t === empreinteDe) return empreinte;
     let h = 0x811c9dc5;
     for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); }
-    return (h >>> 0).toString(36);
+    empreinteDe = t;
+    empreinte = (h >>> 0).toString(36);
+    return empreinte;
   }
   /* les tuiles de bruit partagées (préparées une fois, par tranches) */
   const T = {};
@@ -3639,8 +3647,10 @@
           yield R.coffre.get('sp|' + k).then(async (x) => { box.v = x ? await R.deballer(x) : null; });
           v = box.v;
         }
-        if (v) return v;
+        // (le masque du toucher, tant qu'on a ses pixels : sans relire la carte graphique)
+        if (v) { R.masqueDe(v, v._brut); return v; }
         const sp = yield* construire(id, opts);
+        R.masqueDe(sp, sp._brut);
         if (!o.sansCoffre) R.emballer(sp).then((x) => x && R.coffre.put('sp|' + k, x));
         return sp;
       })();

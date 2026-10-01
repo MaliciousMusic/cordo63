@@ -47,36 +47,55 @@
      n'est pas à l'écran : le film, lui, vit dans un autre onglet. On mène donc
      nos générateurs nous-mêmes, par tranches de quelques ms, et on s'arrête
      quand le film n'est pas visible (les conditions posées sont toutes fausses).
+     Comme celui de co-rendu.js : chaque pas a son échéance (R.echeance) ; prio ≤ 0,
+     aux temps morts seulement (R.inactif), dans l'échéance qu'ils donnent ; 0 < prio < 1,
+     en douceur (une tranche après chaque image) ; prio ≥ 1, tout de suite.
      ====================================================================== */
   const calcul = (function () {
     const file = [];
-    let prevu = false, seq = 0, budget = 8, doux = false;
+    let prevuMsg = false, prevuIdle = false, prevuDoux = false, seq = 0, budget = 8, doux = false;
     const conditions = new Set();
     const canal = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
-    const suite = () => { prevu = false; tourner(); };
+    const suite = () => { prevuMsg = false; tourner(2, null); };
     if (canal) canal.port1.onmessage = suite;
     const stats = { cpu: 0, pasMax: 0, tranches: 0, lents: [] };
+    const classe = (p) => (p <= 0 ? 0 : p < 1 ? 1 : 2);
     function peutTourner() {
       if (!conditions.size) return true;
       for (const f of conditions) if (f()) return true;
       return false;
     }
     function planifier() {
-      if (prevu || !file.length || !peutTourner()) return;
-      prevu = true;
+      if (!file.length || !peutTourner()) return;
+      const c = classe(file[0].prio);
+      if (c === 0) {
+        if (!prevuIdle) { prevuIdle = true; R.inactif((dl) => { prevuIdle = false; tourner(0, dl); }); }
+        return;
+      }
+      if (c === 1) {
+        if (!prevuDoux) { prevuDoux = true; R.apresImage(() => { prevuDoux = false; tourner(1, null); }); }
+        return;
+      }
+      if (prevuMsg) return;
+      prevuMsg = true;
       // doux : une tranche par image affichée (le film joue : il garde ses 60 images/s) ;
       // sinon, les tranches s'enchaînent (le film attend ses objets)
-      if (doux && typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => setTimeout(suite, 0));
+      if (doux) R.apresImage(suite);
       else if (canal) canal.port2.postMessage(0);
       else setTimeout(suite, 0);
     }
-    function tourner() {
+    function tourner(c, dl) {
       const t0 = now();
       stats.tranches++;
-      const b = doux ? Math.min(budget, 5) : budget;
-      while (file.length && now() - t0 < b) {
+      const inactif = c === 0 && !!(dl && dl.timeRemaining && !dl.didTimeout);
+      const fin = t0 + (inactif ? Math.min(budget, dl.timeRemaining() - 1) : c === 1 ? R.DOUX : doux ? Math.min(budget, 5) : budget);
+      while (file.length) {
         const job = file[0];
+        if (classe(job.prio) !== c) break; // (ce n'est pas sa file : planifier() s'en charge)
+        const reste = fin - now();
+        if (reste < (inactif ? 1 : 0.5)) break;
         const ta = now();
+        R.echeance(Math.min(R.TRANCHE, reste));
         let r;
         try {
           r = job.gen.next(job.retour);
@@ -116,6 +135,12 @@
         file.push(job);
         trier();
         planifier();
+        return p;
+      },
+      /** un calcul lancé passe devant (prio plus haute) : on en a besoin maintenant */
+      presser(p, prio) {
+        const job = p && p.job;
+        if (job && prio > job.prio) { job.prio = prio; trier(); planifier(); }
         return p;
       },
       /** une condition pour calculer (le film est-il visible ?) ; → la fonction qui l'enlève */
@@ -1010,11 +1035,10 @@
      ====================================================================== */
   const LONG_BRAS = 470; // l'avant-bras et la manche : de quoi sortir du cadre
   /* un peu de lumière sous la peau : dans ses ombres, la peau tire vers le rouge, pas vers le gris
-     (après l'éclairage ; seulement sur ce qui a la teinte de la peau : ni l'encre, ni le bracelet, ni le cadran) */
-  function* sousPeau(sp, force = 1, filets = false) {
-    const c = sp.canvas, w = c.width, h = c.height;
-    const g = c.getContext('2d', { willReadFrequently: true });
-    const img = g.getImageData(0, 0, w, h), d = img.data;
+     (après l'éclairage ; seulement sur ce qui a la teinte de la peau : ni l'encre, ni le bracelet, ni le cadran).
+     Sur l'image éclairée elle-même, avant qu'elle n'aille dans le canvas (R.rendre : apres) : aucune relecture */
+  function* sousPeau(img, force = 1, filets = false) {
+    const w = img.width, h = img.height, d = img.data;
     const src = new Uint8ClampedArray(d);
     const PLEIN = 250;
     // 1. Les filets (la main seulement) : là où deux pièces se chevauchent de très près (le bout d'un doigt replié
@@ -1047,7 +1071,7 @@
             d[i] = src[ia] * wa + src[ib] * wb; d[i + 1] = src[ia + 1] * wa + src[ib + 1] * wb; d[i + 2] = src[ia + 2] * wa + src[ib + 2] * wb;
           }
         }
-        if ((j & 63) === 63) yield;
+        if (R.assez()) yield;
       }
     }
     // 2. Le liseré : sur les pixels du bord (couverture partielle), le moteur calcule une normale rasante (la pente
@@ -1072,7 +1096,7 @@
         }
         if (sw > 0) { d[i] = sr / sw; d[i + 1] = sg / sw; d[i + 2] = sb / sw; }
       }
-      if ((j & 63) === 63) yield;
+      if (R.assez()) yield;
     }
     for (let j = 0; j < h; j++) {
       for (let i = j * w * 4, n = (j + 1) * w * 4; i < n; i += 4) {
@@ -1088,9 +1112,8 @@
         d[i + 1] = Math.min(255, gg + 7 * s);
         d[i + 2] = Math.max(0, b - 1 * s);
       }
-      if ((j & 63) === 63) yield;
+      if ((j & 7) === 7 && R.assez()) yield;
     }
-    g.putImageData(img, 0, 0);
   }
 
   function* main(cote, pose, o = {}) {
@@ -1109,8 +1132,8 @@
       cavite: DEBUG.cavite === 0 ? false : [0.8, 0.05], soleil: DEBUG.soleil === 1 ? 1.5 : false, wrap: 0.38, // (pas d'ombres propres : sur les bords raides des doigts pliés, elles font des stries)
       ombre: { opacite: 0.5, contact: 0.26, doux: 1.25 },
       oeil: o.oeil ? { x: o.oeil[0], y: o.oeil[1] } : undefined,
+      apres: (img) => sousPeau(img, 1, true),
     });
-    yield* sousPeau(sp, 1, true);
     sp.id = 'main:' + cote + ':' + pose;
     sp.t.tout = now() - t0;
     sp.cote = cote;
@@ -1129,8 +1152,8 @@
       cavite: [2.5, 0.06], soleil: 1.6, wrap: 0.38,
       ombre: { opacite: 0.46, contact: 0.2, doux: 1.4 },
       oeil: o.oeil ? { x: o.oeil[0], y: o.oeil[1] } : undefined,
+      apres: (img) => sousPeau(img, 0.8),
     });
-    yield* sousPeau(sp, 0.8);
     sp.id = 'bras:' + cote;
     sp.t.tout = now() - t0;
     sp.cote = cote;
@@ -1167,7 +1190,7 @@
         const sp = await R.deballer(x);
         if (!sp) return null;
         if (sp.ombre && !sp.ombre.canvas) {
-          const oc = x.ombre && x.m && x.m.ombre ? await R.dePNG(x.ombre) : null;
+          const oc = x.ombre && x.m && x.m.ombre ? await R.deCoffre(x.ombre) : null;
           sp.ombre = oc ? Object.assign({ canvas: oc }, x.m.ombre) : null;
         }
         if (x.plus) for (const n of Object.keys(x.plus)) if (x.plus[n] != null && sp[n] == null) sp[n] = x.plus[n];
@@ -1187,7 +1210,7 @@
     const k = cleDe(quoi, cote, pose, o);
     const c = R.cache.get(k);
     if (c) return Promise.resolve(c);
-    if (enCours.has(k)) return enCours.get(k);
+    if (enCours.has(k)) return calcul.presser(enCours.get(k), prio); // (demandé à nouveau, plus pressé : il passe devant)
     const opts = Object.assign({}, o, { ppm: q(o.ppm || 2, 0.05), angle: (q(((o.angle || 0) * 180) / Math.PI, 0.5) * Math.PI) / 180 });
     const sansCoffre = o.sansCoffre || /[?&]nocache\b/.test(location.search);
     const gen = (function* () {
@@ -1202,7 +1225,9 @@
       if (!sansCoffre) coffre.ranger('mn|' + k, sp);
       return sp;
     })();
-    const p = calcul.lancer(gen, prio, quoi + ':' + cote + ':' + (pose || '')).then((sp) => { enCours.delete(k); return R.cache.set(k, sp); }, (e) => { enCours.delete(k); throw e; });
+    const pl = calcul.lancer(gen, prio, quoi + ':' + cote + ':' + (pose || ''));
+    const p = pl.then((sp) => { enCours.delete(k); return R.cache.set(k, sp); }, (e) => { enCours.delete(k); throw e; });
+    p.job = pl.job;
     enCours.set(k, p);
     return p;
   }

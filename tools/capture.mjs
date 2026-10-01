@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export async function capture(url, out, { w = 400, h = 800, scale = 1, wait = 1500, selector = null, before = null, format = 'png', quality = 90 } = {}) {
+export async function capture(url, out, { w = 400, h = 800, scale = 1, wait = 1500, selector = null, before = null, format = 'png', quality = 90, lire = null } = {}) {
   const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const port = 9300 + Math.floor(Math.random() * 600);
@@ -36,13 +36,14 @@ export async function capture(url, out, { w = 400, h = 800, scale = 1, wait = 15
     const r = await ev(`(() => { const b = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; })()`);
     if (r) clip = { x: r[0], y: r[1], width: r[2], height: r[3], scale: 1 };
   }
-  const s = await send('Page.captureScreenshot', { format, quality: format === 'jpeg' ? quality : undefined, clip, captureBeyondViewport: true });
+  const s = await send('Page.captureScreenshot', { format, quality: format === 'jpeg' || format === 'webp' ? quality : undefined, clip, captureBeyondViewport: true });
   fs.writeFileSync(out, Buffer.from(s.result.data, 'base64'));
+  const valeur = lire ? await ev(lire) : undefined;
   ws.close();
   proc.kill();
   await sleep(500);
   try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* Chrome tient encore le dossier */ }
-  return out;
+  return lire ? valeur : out;
 }
 
 if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}` || process.argv[1].endsWith('capture.mjs')) {
@@ -51,7 +52,7 @@ if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}` || proc
     console.error('Usage : node tools/capture.mjs <url> <sortie.png> [largeur] [hauteur] [échelle] [attente_ms] [sélecteur]');
     process.exit(1);
   }
-  await capture(url, out, { w: +w || 400, h: +h || 800, scale: +scale || 1, wait: +wait || 1500, selector: selector || null, format: out.endsWith('.jpg') ? 'jpeg' : 'png' });
+  await capture(url, out, { w: +w || 400, h: +h || 800, scale: +scale || 1, wait: +wait || 1500, selector: selector || null, format: out.endsWith('.jpg') ? 'jpeg' : out.endsWith('.webp') ? 'webp' : 'png' });
   console.log('capture →', out);
   process.exit(0);
 }

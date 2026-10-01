@@ -20,16 +20,24 @@ html.ouverture, html.ouverture body { background: #1E1510; }
 /* le fond, sous la toile : l'établi sombre ; opaque tant que l'appli se prépare (rien ne se voit entre les
    mailles), il s'efface quand on entre : l'appli paraît entre les lacets qui s'en vont */
 .splash::before {
-  content: ''; position: absolute; inset: 0;
+  content: ''; position: absolute; inset: 0; z-index: 0;
   background: var(--grain), radial-gradient(120% 85% at 50% 42%, #3E2E22, #231811 62%, #150F0B);
   transition: opacity .5s ease .12s;
 }
 .splash.lance::before { opacity: 0; }
-.splash-lacis { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* la toile au repos, en image : le premier état de l'écran, avant tout script (la même que celle du canevas, qui la
+   relaie sans que rien ne bouge : même réseau centré sur l'écran, même graine), sur l'établi sombre ; sa miniature
+   floue paraît tout de suite (en bas de cette feuille). Elle s'en va d'un coup quand on entre : le canevas tire ses lacets */
+.splash::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: url(../assets/img/lacis.webp) 50% 50% / 640px 1000px no-repeat, var(--toile-mini) 50% 50% / 640px 1000px no-repeat;
+}
+.splash.lance::after { display: none; }
+.splash-lacis { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; display: block; }
 
 /* le milieu : sans cadre, les perles (leur place), puis les boutons */
 .splash-badge {
-  position: relative; z-index: 2; width: min(100%, 560px);
+  position: relative; z-index: 3; width: min(100%, 560px);
   display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
 }
 .splash-perles { width: 100%; height: 150px; flex: none; }
@@ -65,3 +73,6 @@ html.ouverture, html.ouverture body { background: #1E1510; }
 }
 .splash-muet[hidden] { display: none; }
 .splash.lance .splash-entrer, .splash.lance .splash-muet { opacity: 0; transform: none; transition: opacity .2s ease; pointer-events: none; }
+
+/* la miniature floue de la toile, 32 × 50 (écrite par tools/render-assets.mjs) */
+.splash { --toile-mini: url(data:image/webp;base64,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); }

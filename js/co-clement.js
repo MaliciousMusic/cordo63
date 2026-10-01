@@ -12,9 +12,11 @@
      posé dessus (il se balance), des bras à deux os (cinématique inverse), des mains en poses
      (ouverte, poing, pince, plate, tenir, geste), des jambes qui marchent.
    La tête et le tronc (le plus coûteux) passent par de petits caches d'images, indexés par leur pose
-   arrondie : on ne les redessine que quand la pose change vraiment.
+   arrondie : on ne les redessine que quand la pose change vraiment (des caches bornés en mémoire,
+   leurs canevas resservent) ; les dégradés et les motifs des dessins de chaque image sont faits une fois.
    CO.Clement.create(opts) → le pantin : un état qu'on anime (etat), maj(dt) (respiration, clignements,
-   tablier), dessiner(ctx, passe, objets), des repères (tete(), boite(), point(), repos()).
+   tablier), dessiner(ctx, passe, objets), des repères (tete(), boite(), point(), repos()), emprise()
+   (où il peint : la scène n'efface et ne peint que là), prechaufferCaches(ctx) (un générateur).
    CO.Clement.prechauffer() : un générateur qui fabrique les textures (barbe, cheveux, toile…) par pas.
    ========================================================================== */
 (function () {
@@ -177,9 +179,31 @@
     return c;
   };
   const texJean = () => tex('jean', fabJean);
+  /* ---------- les dégradés et les motifs des dessins de chaque image : faits une fois (un dégradé, un motif ne
+     tiennent à aucun canevas ; leur repère est celui du dessin qui les pose) ---------- */
+  const DEG = new Map(), MOTIFS = new Map();
+  let ctxDeg = null;
+  const ctxD = () => ctxDeg || (ctxDeg = toile(1, 1).getContext('2d'));
+  /** un dégradé linéaire fait une fois pour ces points et ces couleurs */
+  function linF(x0, y0, x1, y1, stops) {
+    const cle = x0 + ',' + y0 + ',' + x1 + ',' + y1 + '|' + stops.join(';');
+    let g = DEG.get(cle);
+    if (!g) { if (DEG.size > 400) DEG.clear(); g = lin(ctxD(), x0, y0, x1, y1, stops); DEG.set(cle, g); }
+    return g;
+  }
+  /** remplit le chemin courant avec le dégradé linéaire unité (de (0, 0) à (1, 0)) posé par la matrice (a, b, c, d, e, f) :
+      le même dessin qu'un dégradé de (e, f) à (e + a, f + b), sans en refaire un à chaque image */
+  function remplirDegrade(ctx, stops, a, b, c, d, e, f) {
+    ctx.save();
+    ctx.transform(a, b, c, d, e, f);
+    ctx.fillStyle = linF(0, 0, 1, 0, stops);
+    ctx.fill();
+    ctx.restore();
+  }
   /** remplit le chemin courant avec une texture ancrée au point (ox, oy), à l'échelle k (cm par pixel) */
   function remplirMotif(ctx, img, ox, oy, k, alpha = 1, rot = 0) {
-    const pat = ctx.createPattern(img, 'repeat');
+    let pat = MOTIFS.get(img);
+    if (!pat) { pat = ctxD().createPattern(img, 'repeat'); MOTIFS.set(img, pat); }
     ctx.save();
     ctx.translate(ox, oy);
     if (rot) ctx.rotate(rot);
@@ -879,7 +903,7 @@
   /* ---------- une main, dans son repère : origine au poignet, x vers les doigts, y vers le pouce ---------- */
   const PINCE = [12.7, -5.6], ECHELLE_MAIN = 0.93; // où le pouce et l'index se touchent (la pose 'pince'), dans ce repère
   function dessinerMain(ctx, pose, ombre) {
-    const peauG = (x0, x1) => lin(ctx, x0, -4, x1, 4, [[0, PAL.peauClair], [0.45, PAL.peau], [1, PAL.peauOmbre]]);
+    const peauG = (x0, x1) => linF(x0, -4, x1, 4, [[0, PAL.peauClair], [0.45, PAL.peau], [1, PAL.peauOmbre]]);
     const doigt = (x0, y0, ang, l, r, pli = 0) => { // un doigt en deux phalanges
       const c1 = Math.cos(ang), s1 = Math.sin(ang), a2 = ang + pli, c2 = Math.cos(a2), s2 = Math.sin(a2);
       const x1 = x0 + c1 * l * 0.55, y1 = y0 + s1 * l * 0.55, x2 = x1 + c2 * l * 0.45, y2 = y1 + s2 * l * 0.45;
@@ -908,7 +932,7 @@
     switch (pose) {
       case 'poing': case 'prise': { // le poing (autour d'un manche en x = 9.4)
         paume(7.4, 8.4);
-        ctx.fillStyle = lin(ctx, 6, -4, 11.5, 4, [[0, PAL.peauClair], [0.5, PAL.peau], [1, PAL.peauOmbre]]);
+        ctx.fillStyle = linF(6, -4, 11.5, 4, [[0, PAL.peauClair], [0.5, PAL.peau], [1, PAL.peauOmbre]]);
         ctx.beginPath();
         ctx.moveTo(6.4, -4.3); ctx.bezierCurveTo(9.6, -4.9, 12, -3.6, 11.9, -0.5); ctx.bezierCurveTo(12, 2.6, 10.3, 4.6, 6.6, 4.3); ctx.closePath();
         ctx.fill();
@@ -993,10 +1017,10 @@
     ctx.arc(A[0], A[1], ra, Math.atan2(-ny, -nx), Math.atan2(ny, nx), true);
     ctx.closePath();
     // la lumière vient d'en haut à gauche : le côté de la normale qui regarde par là est clair
+    // (le dégradé en travers, de M + R·n à M - R·n : le dégradé unité posé dans le repère du membre)
     const clair = nx * -0.55 + ny * -0.83 > 0 ? 1 : -1;
-    const R = Math.max(ra, rb) * 1.1;
-    ctx.fillStyle = lin(ctx, M[0] + nx * R * clair, M[1] + ny * R * clair, M[0] - nx * R * clair, M[1] - ny * R * clair, couleurs);
-    ctx.fill();
+    const R = Math.max(ra, rb) * 1.1, kx = -2 * R * nx * clair, ky = -2 * R * ny * clair;
+    remplirDegrade(ctx, couleurs, kx, ky, -ky, kx, M[0] + nx * R * clair, M[1] + ny * R * clair);
     return { ux, uy, nx, ny, L };
   }
 
@@ -1497,9 +1521,8 @@
         ctx.quadraticCurveTo(lerp(A[0], Mn[0], 0.5) - nx * (rA + rB) * 0.5, lerp(A[1], Mn[1], 0.5) - ny * (rA + rB) * 0.5, A[0] - nx * rA, A[1] - ny * rA);
         ctx.arc(A[0], A[1], rA, Math.atan2(-ny, -nx), Math.atan2(ny, nx), true);
         ctx.closePath();
-        const R0 = rB * 1.1, M0 = lerp2(A, Mn, 0.5);
-        ctx.fillStyle = lin(ctx, M0[0] + nx * R0 * clair, M0[1] + ny * R0 * clair, M0[0] - nx * R0 * clair, M0[1] - ny * R0 * clair, [[0, PAL.tshirtClair], [0.45, PAL.tshirt], [1, PAL.tshirtOmbre]]);
-        ctx.fill();
+        const R0 = rB * 1.1, M0 = lerp2(A, Mn, 0.5), kx = -2 * R0 * nx * clair, ky = -2 * R0 * ny * clair;
+        remplirDegrade(ctx, [[0, PAL.tshirtClair], [0.45, PAL.tshirt], [1, PAL.tshirtOmbre]], kx, ky, -ky, kx, M0[0] + nx * R0 * clair, M0[1] + ny * R0 * clair);
         remplirMotif(ctx, texTricot(), A[0], A[1], 0.25, 0.6);
       }
       ctx.strokeStyle = 'rgba(12,14,18,0.55)';
@@ -1523,7 +1546,7 @@
         ctx.fillRect(-1.1, -3.25, 2.2, 6.5);
         ctx.fillStyle = 'rgba(255,220,170,0.35)';
         ctx.fillRect(-1.1, -3.25, 0.5, 6.5);
-        ctx.fillStyle = lin(ctx, -1.6, -1.6, 1.6, 1.6, [[0, '#E6E9EB'], [0.5, '#9EA3A8'], [1, '#5E6368']]);
+        ctx.fillStyle = linF(-1.6, -1.6, 1.6, 1.6, [[0, '#E6E9EB'], [0.5, '#9EA3A8'], [1, '#5E6368']]);
         ctx.beginPath(); ctx.arc(0, -2.1, 1.65, 0, TAU); ctx.fill();
         ctx.fillStyle = '#1C1E22';
         ctx.beginPath(); ctx.arc(0, -2.1, 1.2, 0, TAU); ctx.fill();
@@ -1555,16 +1578,18 @@
       const env = enveloppe(pts.concat(haut));
       ctx.beginPath();
       lisse(ctx, env, true, 0.08);
+      // (les deux dégradés unité, posés à la hauteur puis à la largeur du cou ; de longueur nulle, un dégradé ne peint rien)
       const yT = Math.min(...haut.map((p) => p[1])), yB = pts[0][1];
-      ctx.fillStyle = lin(ctx, 0, yT, 0, yB, [[0, '#4E2A1E'], [0.4, PAL.peauSombre], [1, PAL.peauOmbre]]);
-      ctx.fill();
-      const xs = env.map((p) => p[0]);
-      ctx.fillStyle = lin(ctx, Math.min(...xs), 0, Math.max(...xs), 0, [[0, 'rgba(255,220,190,0.16)'], [0.5, 'rgba(0,0,0,0)'], [1, 'rgba(40,16,8,0.32)']]);
-      ctx.fill();
+      if (yB !== yT) remplirDegrade(ctx, [[0, '#4E2A1E'], [0.4, PAL.peauSombre], [1, PAL.peauOmbre]], 0, yB - yT, -(yB - yT), 0, 0, yT);
+      const xs = env.map((p) => p[0]), x0 = Math.min(...xs), x1 = Math.max(...xs);
+      if (x1 !== x0) remplirDegrade(ctx, [[0, 'rgba(255,220,190,0.16)'], [0.5, 'rgba(0,0,0,0)'], [1, 'rgba(40,16,8,0.32)']], x1 - x0, 0, 0, x1 - x0, x0, 0);
     }
 
     /* ---------- l'ombre au sol ---------- */
     function ombreSol(ctx) {
+      // (son dégradé est posé avant le repère de l'ellipse : centré en (2x, 1,18y) de ce repère, il ne touche l'ellipse que
+      //  près du mur de gauche ; ailleurs il ne peint rien : on ne le fait même pas)
+      if (Math.hypot(S.x, S.y) >= 60) return;
       ctx.fillStyle = rad(ctx, S.x, S.y, 30, [[0, 'rgba(10,6,3,0.35)'], [1, 'rgba(10,6,3,0)']]);
       ctx.save();
       ctx.translate(S.x, S.y);
@@ -1573,18 +1598,47 @@
       ctx.restore();
     }
 
-    /* ---------- les images en cache : la tête et le tronc (redessinés seulement quand la pose change) ---------- */
-    function Cache(max) {
+    /* ---------- les images en cache : la tête et le tronc (redessinés seulement quand la pose change) ----------
+       Bornées en mémoire (iOS limite le total des canevas d'une page) : chaque cache a son budget d'octets ; une image
+       trop grande pour lui (la caméra tout près, l'établi de près) se dessine sans cache ; les canevas qu'on chasse
+       resservent à la même taille (rien à ramasser, pas de pointe de mémoire). */
+    const reserve = []; // des canevas chassés, prêts à resservir
+    const octetsDe = (c) => c.width * c.height * 4;
+    const octetsReserve = () => reserve.reduce((s, c) => s + octetsDe(c), 0);
+    function prendreToile(w, h) {
+      w = Math.max(1, Math.round(w)); h = Math.max(1, Math.round(h));
+      const i = reserve.findIndex((c) => c.width === w && c.height === h);
+      if (i < 0) return toile(w, h);
+      const c = reserve.splice(i, 1)[0], g = c.getContext('2d');
+      // (l'état d'un canevas neuf : un dessin en cache ne doit rien hériter du précédent)
+      if (g.reset) g.reset();
+      else { neuf(g); g.clearRect(0, 0, w, h); }
+      return c;
+    }
+    function neuf(g) {
+      g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      g.lineCap = 'butt'; g.lineJoin = 'miter'; g.lineWidth = 1; g.miterLimit = 10; if (g.setLineDash) g.setLineDash([]); g.lineDashOffset = 0;
+      g.fillStyle = '#000'; g.strokeStyle = '#000'; g.imageSmoothingEnabled = true; g.font = '10px sans-serif'; g.textAlign = 'start'; g.textBaseline = 'alphabetic';
+    }
+    function rendreToile(c) {
+      if (octetsReserve() + octetsDe(c) <= 2 * 1048576) reserve.push(c);
+      else c.width = c.height = 0; // (la mémoire tout de suite)
+    }
+    function Cache(max, budget) {
       const m = new Map();
+      let octets = 0;
+      const chasser = (k) => { const e = m.get(k); m.delete(k); octets -= octetsDe(e.c); rendreToile(e.c); };
       return {
         get(k) { const v = m.get(k); if (v) { m.delete(k); m.set(k, v); } return v; },
-        set(k, v) { m.set(k, v); while (m.size > max) m.delete(m.keys().next().value); },
-        clear() { m.clear(); },
+        set(k, v) { m.set(k, v); octets += octetsDe(v.c); while (m.size > max || (octets > budget && m.size > 1)) chasser(m.keys().next().value); },
+        clear() { Array.from(m.keys()).forEach(chasser); reserve.splice(0).forEach((c) => { c.width = c.height = 0; }); },
         get taille() { return m.size; },
+        get octets() { return octets; },
+        budget,
       };
     }
-    const cacheTete = Cache(opts.cacheTete || 28), cacheTronc = Cache(opts.cacheTronc || 10);
-    const stats = { tete: 0, teteRate: 0, tronc: 0, troncRate: 0 };
+    const cacheTete = Cache(opts.cacheTete || 28, (opts.budgetTete || 3) * 1048576), cacheTronc = Cache(opts.cacheTronc || 10, (opts.budgetTronc || 7) * 1048576);
+    const stats = { tete: 0, teteRate: 0, teteDirect: 0, tronc: 0, troncRate: 0, troncDirect: 0, get octets() { return cacheTete.octets + cacheTronc.octets + octetsReserve(); } };
     const q = (v, pas) => Math.round(v / pas);
     /** dessine via le cache : bb = la boîte (cm) autour de l'ancre ; dessin(g) dessine autour de (0, 0) */
     function viaCache(ctx, cache, cle, bb, ancre, dessin, nom) {
@@ -1594,7 +1648,16 @@
       const key = cle + '|' + kq.toFixed(3);
       let e = cache.get(key);
       if (!e) {
-        const c = toile(bb.w * kq, bb.h * kq), g = c.getContext('2d');
+        if (bb.w * kq * bb.h * kq * 4 > cache.budget * 0.62) { // (trop grande pour le cache : dessinée telle quelle, comme dans un canevas neuf)
+          stats[nom + 'Direct']++;
+          ctx.save();
+          neuf2(ctx);
+          ctx.translate(ancre[0], ancre[1]);
+          const info = dessin(ctx);
+          ctx.restore();
+          return info;
+        }
+        const c = prendreToile(bb.w * kq, bb.h * kq), g = c.getContext('2d');
         g.setTransform(kq, 0, 0, kq, -bb.x * kq, -bb.y * kq);
         const info = dessin(g);
         e = { c, info };
@@ -1605,7 +1668,46 @@
       ctx.drawImage(e.c, ancre[0] + bb.x, ancre[1] + bb.y, bb.w, bb.h);
       return e.info;
     }
+    /** (l'état d'un canevas neuf, sans toucher au repère) */
+    function neuf2(g) {
+      g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      g.lineCap = 'butt'; g.lineJoin = 'miter'; g.lineWidth = 1; g.miterLimit = 10; if (g.setLineDash) g.setLineDash([]); g.lineDashOffset = 0;
+      g.fillStyle = '#000'; g.strokeStyle = '#000'; g.font = '10px sans-serif'; g.textAlign = 'start'; g.textBaseline = 'alphabetic';
+    }
     const BB_TETE = { x: -20, y: -29, w: 40, h: 48 }, BB_TRONC = { x: -36, y: -162, w: 72, h: 136 };
+
+    /** la pose arrondie du tronc et de la tête (ce que les caches savent distinguer) */
+    function poses(Pj) {
+      const piv = Pj(0, 157.5, 1.2);
+      const headYaw = S.yaw + S.tete.turn;
+      const H0 = {
+        x: 0, y: 0, yaw: q(headYaw, 0.025) * 0.025, pitch: q(S.tete.pitch + S.lean * 0.3, 0.025) * 0.025, roll: q(S.tete.roll - S.cote * 0.6, 0.025) * 0.025,
+        regard: [q(S.regard[0], 0.1) * 0.1, q(S.regard[1], 0.1) * 0.1], cligne: q(S.cligne, 0.25) * 0.25, bouche: q(S.bouche, 0.12) * 0.12,
+        sourire: q(S.sourire, 0.1) * 0.1, sourcils: q(S.sourcils, 0.1) * 0.1, souffle: q(S.souffle, 0.2) * 0.2, clous: S.clous | 0, eclat: q(S.eclat, 0.2) * 0.2,
+      };
+      H0.reflet = H0.yaw;
+      const respQ = q(Math.sin(S.respire), 0.34) * 0.34;
+      const cleTronc = [q(S.yaw, 0.02), q(S.lean, 0.02), q(S.cote, 0.02), q(S.assis, 0.04), q(respQ, 0.34), q(S.tablier.x, 0.45), q(S.tablier.z, 0.45)].join(',');
+      const cleTete = [H0.yaw, H0.pitch, H0.roll, H0.regard[0], H0.regard[1], H0.cligne, H0.bouche, H0.sourire, H0.sourcils, H0.souffle, H0.clous, H0.eclat].map((v) => v.toFixed(3)).join(',');
+      return { piv, H0, respQ, cleTronc, cleTete };
+    }
+    // le tronc et le tablier : en cache, ancrés aux pieds (le rebond du pas s'ajoute à l'ancre)
+    function dessinerTronc(ctx, Pj, P) {
+      if (opts.sansCache) tronc(ctx, Pj);
+      else viaCache(ctx, cacheTronc, P.cleTronc, BB_TRONC, [S.x, S.y - rebond()], (g) => tronc(g, projeteur({ x0: 0, y0: 0, sansBob: true, resp: P.respQ })), 'tronc');
+    }
+    function dessinerLaTete(ctx, P, HT) {
+      if (opts.sansCache) return dessinerTete(ctx, HT);
+      const piv = P.piv, r = viaCache(ctx, cacheTete, P.cleTete, BB_TETE, piv, (g) => dessinerTete(g, P.H0), 'tete');
+      return { centre: [r.centre[0] + piv[0], r.centre[1] + piv[1]], haut: [r.haut[0] + piv[0], r.haut[1] + piv[1], r.haut[2]], bouche: [r.bouche[0] + piv[0], r.bouche[1] + piv[1]] };
+    }
+    /** les images en cache de la pose du moment, faites d'avance pas à pas (le tronc, puis la tête) : un générateur */
+    function* prechaufferCaches(ctx) {
+      const Pj = projeteur(), P = poses(Pj);
+      dessinerTronc(ctx, Pj, P);
+      yield;
+      dessinerLaTete(ctx, P, Object.assign({}, P.H0, { x: P.piv[0], y: P.piv[1] }));
+    }
 
     /** dessine le pantin. passe : 'tout', 'corps' (tout sauf ce qui est devant les meubles), 'devant' ;
         objets(ctx, main, repere) : le décor dessine ce que tient la main (entre le bras et les doigts) */
@@ -1615,9 +1717,6 @@
       if (passe !== 'devant') {
         dernier = { bras: [] };
       }
-      // la tête : pivot au haut du cou
-      const piv = Pj(0, 157.5, 1.2);
-      const headYaw = S.yaw + S.tete.turn;
       const brasD = bras(ctx, Pj, 'D'), brasG = bras(ctx, Pj, 'G');
       const liste = [brasD, brasG].sort((a, b) => a.z - b.z);
       const derriere = (B) => B.z < -3 && !B.M.devant; // le bras loin, derrière le tronc
@@ -1625,28 +1724,12 @@
         ombreSol(ctx);
         jambes(ctx, Pj);
         liste.forEach((B) => { if (derriere(B)) { dessinerBras(ctx, B, false); if (objets && B.M.objet) objets(ctx, B.M, B); dessinerLaMain(ctx, B); } });
-        // les valeurs arrondies (ce que le cache sait distinguer)
-        const H0 = {
-          x: 0, y: 0, yaw: q(headYaw, 0.025) * 0.025, pitch: q(S.tete.pitch + S.lean * 0.3, 0.025) * 0.025, roll: q(S.tete.roll - S.cote * 0.6, 0.025) * 0.025,
-          regard: [q(S.regard[0], 0.1) * 0.1, q(S.regard[1], 0.1) * 0.1], cligne: q(S.cligne, 0.25) * 0.25, bouche: q(S.bouche, 0.12) * 0.12,
-          sourire: q(S.sourire, 0.1) * 0.1, sourcils: q(S.sourcils, 0.1) * 0.1, souffle: q(S.souffle, 0.2) * 0.2, clous: S.clous | 0, eclat: q(S.eclat, 0.2) * 0.2,
-        };
-        H0.reflet = H0.yaw;
-        const HT = Object.assign({}, H0, { x: piv[0], y: piv[1] });
-        // le tronc et le tablier : en cache, ancrés aux pieds (le rebond du pas s'ajoute à l'ancre)
-        const respQ = q(Math.sin(S.respire), 0.34) * 0.34;
-        const cleTronc = [q(S.yaw, 0.02), q(S.lean, 0.02), q(S.cote, 0.02), q(S.assis, 0.04), q(respQ, 0.34), q(S.tablier.x, 0.45), q(S.tablier.z, 0.45)].join(',');
-        if (opts.sansCache) tronc(ctx, Pj);
-        else viaCache(ctx, cacheTronc, cleTronc, BB_TRONC, [S.x, S.y - rebond()], (g) => tronc(g, projeteur({ x0: 0, y0: 0, sansBob: true, resp: respQ })), 'tronc');
+        // les valeurs arrondies (ce que le cache sait distinguer) ; la tête : pivot au haut du cou
+        const P = poses(Pj), piv = P.piv;
+        const HT = Object.assign({}, P.H0, { x: piv[0], y: piv[1] });
+        dessinerTronc(ctx, Pj, P);
         cou(ctx, Pj, HT);
-        let t;
-        if (opts.sansCache) t = dessinerTete(ctx, HT);
-        else {
-          const cleTete = [H0.yaw, H0.pitch, H0.roll, H0.regard[0], H0.regard[1], H0.cligne, H0.bouche, H0.sourire, H0.sourcils, H0.souffle, H0.clous, H0.eclat].map((v) => v.toFixed(3)).join(',');
-          const r = viaCache(ctx, cacheTete, cleTete, BB_TETE, piv, (g) => dessinerTete(g, H0), 'tete');
-          t = { centre: [r.centre[0] + piv[0], r.centre[1] + piv[1]], haut: [r.haut[0] + piv[0], r.haut[1] + piv[1], r.haut[2]], bouche: [r.bouche[0] + piv[0], r.bouche[1] + piv[1]] };
-        }
-        dernier.tete = t;
+        dernier.tete = dessinerLaTete(ctx, P, HT);
         dernier.piv = piv;
       }
       // les bras (le décor peut s'intercaler : ceux qui ne sont pas « devant » se dessinent avec le corps)
@@ -1671,6 +1754,22 @@
       const Pj = projeteur();
       const h = Pj(0, 184, 0), p = Pj(0, 40, 0);
       return { x: S.x - 26, y: h[1], w: 52, h: p[1] - h[1] };
+    }
+    /** où dessiner() peut peindre (monde), d'après la pose du moment : { corps, bras }, deux boîtes [x0, y0, x1, y1] —
+        corps : tout (le tronc et la boîte de son cache, la tête, les jambes, l'ombre, les bras) ; bras : les bras et les
+        mains seuls ; rayon(o) : la place d'un objet tenu, autour du poignet */
+    function emprise(rayon) {
+      const Pj = projeteur(), bob = rebond(), piv = Pj(0, 157.5, 1.2);
+      const corps = [Math.min(S.x - 48, piv[0] - 21), Math.min(S.y - bob - 163, piv[1] - 31), Math.max(S.x + 48, piv[0] + 21), S.y + 7];
+      let b = null;
+      const etend = (x0, y0, x1, y1) => { b = b ? [Math.min(b[0], x0), Math.min(b[1], y0), Math.max(b[2], x1), Math.max(b[3], y1)] : [x0, y0, x1, y1]; };
+      ['D', 'G'].forEach((cote) => {
+        const B = bras(null, Pj, cote);
+        [B.Sh, B.E].forEach((p) => etend(p[0] - 8, p[1] - 8, p[0] + 8, p[1] + 8));
+        const r = 17 + (B.M.objet && rayon ? rayon(B.M.objet) : 0);
+        etend(B.W[0] - r, B.W[1] - r, B.W[0] + r, B.W[1] + r);
+      });
+      return { corps: [Math.min(corps[0], b[0]), Math.min(corps[1], b[1]), Math.max(corps[2], b[2]), Math.max(corps[3], b[3])], bras: b };
     }
     /** la tête dans le monde : centre (entre les yeux), et le haut du crâne */
     function tete() {
@@ -1730,7 +1829,7 @@
     }
 
     return {
-      etat: S, PAL, dessiner, maj, boite, tete, epaule, point, repos, stats,
+      etat: S, PAL, dessiner, maj, boite, emprise, tete, epaule, point, repos, stats, prechaufferCaches,
       viderCaches() { cacheTete.clear(); cacheTronc.clear(); },
       get dernier() { return dernier; },
       L_BRAS, L_AVB,

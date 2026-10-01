@@ -188,6 +188,8 @@
     boucle(now) {
       this.raf = 0;
       if (!this.vivant()) return;
+      // encore cachée (sous l'ouverture, avant entree()) : rien à dessiner, elle dort ; entree() la réveille
+      if (this.alpha <= 0 && !this.anim) { this.tPrec = 0; return; }
       const dt = this.tPrec ? Math.min(0.25, (now - this.tPrec) / 1000) : 1 / 60; // (en croisière, une image toutes les 66 ms ; après un sommeil, kick() repart de zéro)
       this.tPrec = now;
       let vif = false;

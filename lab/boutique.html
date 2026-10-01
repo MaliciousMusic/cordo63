@@ -10,7 +10,7 @@
   /* Banc d'essai de la boutique (js/co-boutique.js) :
      ?w=320&h=623 (la taille de la scène) · ?soir · ?reduit · ?activite=marteau · ?fige · ?graine=63
      ?portrait (Clément seul, en grand, avec ses réglages) · ?plein (la scène sur toute la fenêtre)
-     ?vitesse=4 (le temps accéléré) · ?banc (les scripts seuls, pour les mesures) */
+     ?vitesse=4 (le temps accéléré) · ?banc (les scripts seuls, pour les mesures) · ?fixe (la densité des calques figée) */
   html, body { height: auto; overflow: auto; background: #120D0A; color: #EFE6D8; }
   body { font-family: var(--sans); font-size: 13px; }
   .page { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; padding: 14px; }
@@ -73,7 +73,7 @@
   let nuit = q.has('soir') || q.has('nuit');
   (async () => {
     const t0 = performance.now();
-    const s = await CO.Boutique.create($('#host'), { nuit, graine: +(q.get('graine') || 63), vitesse: +(q.get('vitesse') || 1) });
+    const s = await CO.Boutique.create($('#host'), { nuit, graine: +(q.get('graine') || 63), vitesse: +(q.get('vitesse') || 1), adaptatif: !q.has('fixe') });
     journal('créée en ' + Math.round(performance.now() - t0) + ' ms');
     window.S = s;
     s.activites.forEach((a) => $('#act').insertAdjacentHTML('beforeend', `<option>${a}</option>`));

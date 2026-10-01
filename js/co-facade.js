@@ -17,7 +17,15 @@
      monde (ciel lointain, retour de l'angle, mur, devanture, trottoir) → voile du soir → lueurs
      de la rue → quadrillage fantôme → intérieurs éclairés → vinyles collés aux vitres → reflets
      (découpés aux vitres) → vie (lumière de la porte) → devant (poteau, ardoise) → zones à toucher ;
-     par-dessus le SVG, un calque HTML : la chaleur (la lumière dans laquelle on entre)
+     par-dessus, un calque HTML : la chaleur (la lumière dans laquelle on entre)
+   Ce qui bouge ne repeint jamais la grande image : le grand SVG (le fond) ne change pas au repos, et
+   ce qui vit est posé par-dessus, dans de petites couches du même repère (la pile, que la caméra
+   déplace d'un bloc) : la toile de la vitrine (Clément, la finisseuse, l'établi : un canvas, voir « la
+   toile »), l'avant de l'atelier (ses voiles, la teinte des vitres), la porte (le vantail et ce qui le
+   suit, repeint seulement quand elle bouge), son chant, la toile du reflet qui passe, les lumières de la
+   rue (la flaque, le halo et ses poussières, l'entrée ; en mode « screen » sur ce qui est dessous :
+   leurs respirations jouent sur le compositeur, sans rien repeindre), le devant (poteau, ardoise), et
+   les zones à toucher (HTML).
    Cadrage : toute la hauteur, le bas collé au bas de l'hôte ; sur un écran large, la rue déborde
    sur les côtés ; sur un écran plus haut que la scène, c'est l'immeuble qui déborde en haut.
    Le haut de la scène (≈ 110 unités, 80 px) reste décoratif : l'enseigne des horaires de l'appli
@@ -28,7 +36,8 @@
 (function () {
   'use strict';
   const CO = (window.CO = window.CO || {});
-  const S = (tag, attrs, parent) => CO.svg(tag, attrs, parent);
+  // un parent de la toile (le canvas de la vitrine) fait des nœuds de la toile ; sinon, des éléments SVG
+  const S = (tag, attrs, parent) => (parent && parent.toile ? parent.toile.cree(tag, attrs, parent) : CO.svg(tag, attrs, parent));
   const f = CO.f; // arrondi au centième
 
   const P = {
@@ -80,25 +89,51 @@
     };
   }
 
-  /* ---------- textures (canvas → image, une fois) ---------- */
+  /* ---------- rendre la main : la construction se fait par tranches courtes (pas de longue tâche) ---------- */
+  const souffle = () => new Promise((r) => {
+    if (window.scheduler && typeof scheduler.yield === 'function') { scheduler.yield().then(r, r); return; }
+    if (typeof MessageChannel === 'function') { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); return; }
+    setTimeout(r, 0);
+  });
+  let tTranche = 0;
+  /** Rend la main si la tranche en cours a dépassé ~10 ms */
+  async function tranche() {
+    const now = performance.now();
+    if (now - tTranche < 10) return;
+    await souffle();
+    tTranche = performance.now();
+  }
+
+  /* ---------- textures (canvas → image, une fois ; gardées d'une visite à l'autre) ---------- */
   const TEX = {};
+  const TEX_V = 1; // (à incrémenter si le dessin d'une texture change)
   function texture(nom, N, dessin) {
     if (TEX[nom]) return TEX[nom];
-    const c = document.createElement('canvas');
-    c.width = c.height = N;
-    dessin(c.getContext('2d'), N);
-    return (TEX[nom] = c.toDataURL());
+    return (TEX[nom] = (async () => {
+      const cle = `tex-${nom}-${N}-${TEX_V}`;
+      const vu = CO.store ? CO.store.get(cle, null) : null;
+      if (typeof vu === 'string' && vu.startsWith('data:image/')) return vu;
+      const c = document.createElement('canvas');
+      c.width = c.height = N;
+      await dessin(c.getContext('2d'), N);
+      const url = c.toDataURL();
+      if (CO.store) CO.store.set(cle, url);
+      return url;
+    })());
   }
-  // l'enduit : un bruit doux, raccordable (quatre échantillons mêlés)
-  const texEnduit = () => texture('enduit', 160, (x, N) => {
+  // l'enduit : un bruit doux, raccordable (quatre échantillons mêlés) ; calculé par tranches de rangées
+  const texEnduit = () => texture('enduit', 160, async (x, N) => {
     const img = x.createImageData(N, N), n1 = CO.noise2(21), n2 = CO.noise2(22), n3 = CO.noise2(23);
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-      const u = i / N, v = j / N;
-      const s = (a, b) => n1(a * 5, b * 5) * 0.5 + n2(a * 17, b * 17) * 0.33 + n3(a * 47, b * 47) * 0.17;
-      const val = s(u, v) * (1 - u) * (1 - v) + s(u - 1, v) * u * (1 - v) + s(u, v - 1) * (1 - u) * v + s(u - 1, v - 1) * u * v;
-      const k = (j * N + i) * 4, t = 0.5 + val * 0.5;
-      img.data[k] = 108 + t * 72; img.data[k + 1] = 98 + t * 66; img.data[k + 2] = 80 + t * 54;
-      img.data[k + 3] = 20 + Math.abs(val) * 52;
+    const s = (a, b) => n1(a * 5, b * 5) * 0.5 + n2(a * 17, b * 17) * 0.33 + n3(a * 47, b * 47) * 0.17;
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const u = i / N, v = j / N;
+        const val = s(u, v) * (1 - u) * (1 - v) + s(u - 1, v) * u * (1 - v) + s(u, v - 1) * (1 - u) * v + s(u - 1, v - 1) * u * v;
+        const k = (j * N + i) * 4, t = 0.5 + val * 0.5;
+        img.data[k] = 108 + t * 72; img.data[k + 1] = 98 + t * 66; img.data[k + 2] = 80 + t * 54;
+        img.data[k + 3] = 20 + Math.abs(val) * 52;
+      }
+      await tranche();
     }
     x.putImageData(img, 0, 0);
   });
@@ -213,32 +248,504 @@
   }
 
   /* ======================================================================
+     La toile : un petit graphe de scène peint au canvas (Path2D). C'est ce qui vit derrière la vitre
+     (Clément, la finisseuse, l'établi) : la repeindre ne repeint rien d'autre de la page.
+     Les mêmes briques que le SVG (un parent de la toile fait des nœuds de la toile : S, path, rect, G…
+     ne changent pas), les mêmes attributs (d, transform, opacity, fill : une couleur ou url(#dégradé)
+     lu dans les defs du SVG, clip-path : url(#…), stroke…), un style (opacity, transition,
+     transformOrigin) et animate() (translate, rotate, opacity ; option ips : la cadence, en images par
+     seconde). Elle se repeint d'elle-même quand quelque chose change (une fois par tâche au plus), et
+     seulement quand la scène se voit.
+     ====================================================================== */
+  const MI = [1, 0, 0, 1, 0, 0];
+  const mul = (A, B) => [A[0] * B[0] + A[2] * B[1], A[1] * B[0] + A[3] * B[1], A[0] * B[2] + A[2] * B[3], A[1] * B[2] + A[3] * B[3], A[0] * B[4] + A[2] * B[5] + A[4], A[1] * B[4] + A[3] * B[5] + A[5]];
+  const RAD = Math.PI / 180;
+  const rot = (deg) => { const a = deg * RAD, c = Math.cos(a), s = Math.sin(a); return [c, s, -s, c, 0, 0]; };
+  /** Une transformation SVG (matrix, translate, scale, rotate [cx cy], skewX, skewY) → une matrice [a b c d e f] */
+  function lireTransform(s) {
+    let M = MI;
+    const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;
+    let m;
+    while ((m = re.exec(s))) {
+      const v = m[2].split(/[\s,]+/).filter(Boolean).map(parseFloat);
+      let T = MI;
+      if (m[1] === 'matrix') T = v.slice(0, 6);
+      else if (m[1] === 'translate') T = [1, 0, 0, 1, v[0] || 0, v[1] || 0];
+      else if (m[1] === 'scale') T = [v[0], 0, 0, v.length > 1 ? v[1] : v[0], 0, 0];
+      else if (m[1] === 'rotate') { const R = rot(v[0] || 0), cx = v[1] || 0, cy = v[2] || 0; T = [R[0], R[1], R[2], R[3], cx - R[0] * cx - R[2] * cy, cy - R[1] * cx - R[3] * cy]; }
+      else if (m[1] === 'skewX') T = [1, 0, Math.tan((v[0] || 0) * RAD), 1, 0, 0];
+      else if (m[1] === 'skewY') T = [1, Math.tan((v[0] || 0) * RAD), 0, 1, 0, 0];
+      M = mul(M, T);
+    }
+    return M;
+  }
+  /** Une transformation CSS d'images clés ('translate(1px, 2px) rotate(3deg)') → [[nom, [valeurs]]…] */
+  function fonctionsCss(s) {
+    const out = [], re = /([a-zA-Z]+)\(([^)]*)\)/g;
+    let m;
+    while ((m = re.exec(String(s)))) out.push([m[1], m[2].split(',').map((x) => parseFloat(x) || 0)]);
+    return out;
+  }
+  function matriceCss(liste) {
+    let M = MI;
+    liste.forEach(([nom, v]) => {
+      let T = MI;
+      if (nom === 'translate') T = [1, 0, 0, 1, v[0] || 0, v[1] || 0];
+      else if (nom === 'translateX') T = [1, 0, 0, 1, v[0] || 0, 0];
+      else if (nom === 'translateY') T = [1, 0, 0, 1, 0, v[0] || 0];
+      else if (nom === 'rotate') T = rot(v[0] || 0);
+      else if (nom === 'scale') T = [v[0], 0, 0, v.length > 1 ? v[1] : v[0], 0, 0];
+      M = mul(M, T);
+    });
+    return M;
+  }
+  /** Les courbes de temps de CSS : linear, ease…, cubic-bezier(), steps() */
+  const COURBES = { ease: [0.25, 0.1, 0.25, 1], 'ease-in': [0.42, 0, 1, 1], 'ease-out': [0, 0, 0.58, 1], 'ease-in-out': [0.42, 0, 0.58, 1] };
+  function bezier(x1, y1, x2, y2) {
+    const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx, cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+    const X = (t) => ((ax * t + bx) * t + cx) * t, Y = (t) => ((ay * t + by) * t + cy) * t, dX = (t) => (3 * ax * t + 2 * bx) * t + cx;
+    return (p) => {
+      if (p <= 0) return 0;
+      if (p >= 1) return 1;
+      let t = p;
+      for (let i = 0; i < 8; i++) { const e = X(t) - p; if (Math.abs(e) < 1e-6) return Y(t); const d = dX(t); if (Math.abs(d) < 1e-6) break; t -= e / d; }
+      let a = 0, b = 1;
+      t = p;
+      for (let i = 0; i < 40; i++) { const v = X(t); if (Math.abs(v - p) < 1e-6) break; if (v < p) a = t; else b = t; t = (a + b) / 2; }
+      return Y(t);
+    };
+  }
+  function courbe(e) {
+    e = String(e || 'linear').trim();
+    if (COURBES[e]) return bezier(...COURBES[e]);
+    let m = e.match(/^cubic-bezier\(([^)]*)\)$/);
+    if (m) { const v = m[1].split(',').map(parseFloat); return bezier(v[0], v[1], v[2], v[3]); }
+    m = e.match(/^steps\(\s*(\d+)\s*(?:,\s*([\w-]+))?\s*\)$/);
+    if (m) {
+      const n = Math.max(1, +m[1]), pos = m[2] || 'end';
+      if (pos === 'jump-none') return (p) => Math.min(1, Math.floor(p * n) / Math.max(1, n - 1));
+      if (pos === 'start' || pos === 'jump-start') return (p) => Math.min(1, Math.ceil(p * n) / n);
+      return (p) => (p >= 1 ? 1 : Math.floor(p * n) / n);
+    }
+    return (p) => p;
+  }
+  /** style.transition → la transition de l'opacité : { dur, ease } (ou null) */
+  function lireTransition(v) {
+    const m = String(v || '').match(/opacity\s+([\d.]+)(m?s)(?:\s+([\w-]+(?:\([^)]*\))?))?/);
+    return m ? { dur: parseFloat(m[1]) * (m[2] === 's' ? 1000 : 1), ease: courbe(m[3] || 'ease') } : null;
+  }
+  /** La boîte d'un tracé SVG [x0, y0, x1, y1] (extrema des courbes compris ; arcs échantillonnés) */
+  function bornesChemin(d) {
+    const t = String(d).match(/[a-df-zA-DF-Z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
+    const b = [Infinity, Infinity, -Infinity, -Infinity];
+    const pt = (X, Y) => { if (X < b[0]) b[0] = X; if (X > b[2]) b[2] = X; if (Y < b[1]) b[1] = Y; if (Y > b[3]) b[3] = Y; };
+    const cub = (x0, y0, x1, y1, x2, y2, x3, y3) => {
+      pt(x3, y3);
+      [[x0, x1, x2, x3, 0], [y0, y1, y2, y3, 1]].forEach(([a0, a1, a2, a3, axe]) => {
+        const A = -a0 + 3 * a1 - 3 * a2 + a3, B = 2 * (a0 - 2 * a1 + a2), C = a1 - a0, rs = [];
+        if (Math.abs(A) < 1e-12) { if (Math.abs(B) > 1e-12) rs.push(-C / B); } else { const D = B * B - 4 * A * C; if (D >= 0) { const q = Math.sqrt(D); rs.push((-B + q) / (2 * A), (-B - q) / (2 * A)); } }
+        rs.forEach((u) => {
+          if (!(u > 0 && u < 1)) return;
+          const v = 1 - u, val = v * v * v * a0 + 3 * v * v * u * a1 + 3 * v * u * u * a2 + u * u * u * a3;
+          if (axe) { if (val < b[1]) b[1] = val; if (val > b[3]) b[3] = val; } else { if (val < b[0]) b[0] = val; if (val > b[2]) b[2] = val; }
+        });
+      });
+    };
+    const arc = (x1, y1, rx, ry, phi, fA, fS, x2, y2) => {
+      pt(x2, y2);
+      rx = Math.abs(rx); ry = Math.abs(ry);
+      if (!rx || !ry) return;
+      const cp = Math.cos(phi * RAD), sp = Math.sin(phi * RAD), dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
+      const xp = cp * dx + sp * dy, yp = -sp * dx + cp * dy, lam = (xp * xp) / (rx * rx) + (yp * yp) / (ry * ry);
+      if (lam > 1) { rx *= Math.sqrt(lam); ry *= Math.sqrt(lam); }
+      const num = rx * rx * ry * ry - rx * rx * yp * yp - ry * ry * xp * xp, den = rx * rx * yp * yp + ry * ry * xp * xp;
+      let co = den ? Math.sqrt(Math.max(0, num / den)) : 0;
+      if (fA === fS) co = -co;
+      const cxp = (co * rx * yp) / ry, cyp = (-co * ry * xp) / rx;
+      const cx = cp * cxp - sp * cyp + (x1 + x2) / 2, cy = sp * cxp + cp * cyp + (y1 + y2) / 2;
+      const ang = (ux, uy, vx, vy) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+      const t1 = ang(1, 0, (xp - cxp) / rx, (yp - cyp) / ry);
+      let dt = ang((xp - cxp) / rx, (yp - cyp) / ry, (-xp - cxp) / rx, (-yp - cyp) / ry);
+      if (!fS && dt > 0) dt -= CO.TAU; else if (fS && dt < 0) dt += CO.TAU;
+      for (let k = 0; k <= 32; k++) { const a = t1 + (dt * k) / 32, ex = rx * Math.cos(a), ey = ry * Math.sin(a); pt(cx + cp * ex - sp * ey, cy + sp * ex + cp * ey); }
+    };
+    let i = 0, cmd = 'M', dern = '', x = 0, y = 0, sx = 0, sy = 0, px = 0, py = 0;
+    const n = () => parseFloat(t[i++]);
+    while (i < t.length) {
+      if (/[a-zA-Z]/.test(t[i])) cmd = t[i++];
+      const rel = cmd !== cmd.toUpperCase(), C = cmd.toUpperCase(), ox = rel ? x : 0, oy = rel ? y : 0;
+      if (C === 'Z') { x = sx; y = sy; px = x; py = y; dern = 'Z'; continue; }
+      if (i >= t.length) break;
+      if (C === 'M') { x = ox + n(); y = oy + n(); sx = x; sy = y; pt(x, y); cmd = rel ? 'l' : 'L'; px = x; py = y; }
+      else if (C === 'L') { x = ox + n(); y = oy + n(); pt(x, y); px = x; py = y; }
+      else if (C === 'H') { x = ox + n(); pt(x, y); px = x; py = y; }
+      else if (C === 'V') { y = oy + n(); pt(x, y); px = x; py = y; }
+      else if (C === 'C') { const a = ox + n(), b2 = oy + n(), c = ox + n(), d2 = oy + n(), e = ox + n(), g = oy + n(); cub(x, y, a, b2, c, d2, e, g); px = c; py = d2; x = e; y = g; }
+      else if (C === 'S') { const a = dern === 'C' || dern === 'S' ? 2 * x - px : x, b2 = dern === 'C' || dern === 'S' ? 2 * y - py : y, c = ox + n(), d2 = oy + n(), e = ox + n(), g = oy + n(); cub(x, y, a, b2, c, d2, e, g); px = c; py = d2; x = e; y = g; }
+      else if (C === 'Q' || C === 'T') {
+        let a, b2;
+        if (C === 'Q') { a = ox + n(); b2 = oy + n(); } else { a = dern === 'Q' || dern === 'T' ? 2 * x - px : x; b2 = dern === 'Q' || dern === 'T' ? 2 * y - py : y; }
+        const e = ox + n(), g = oy + n();
+        cub(x, y, x + (2 / 3) * (a - x), y + (2 / 3) * (b2 - y), e + (2 / 3) * (a - e), g + (2 / 3) * (b2 - g), e, g);
+        px = a; py = b2; x = e; y = g;
+      } else if (C === 'A') { const rx = n(), ry = n(), phi = n(), fA = n(), fS = n(), e = ox + n(), g = oy + n(); arc(x, y, rx, ry, phi, fA, fS, e, g); x = e; y = g; px = x; py = y; }
+      else { i++; continue; }
+      dern = C;
+    }
+    return b[0] <= b[2] ? b : null;
+  }
+  /** Une couleur (#rgb, #rrggbb) et son opacité → rgba() pour le canvas */
+  const rgba = (c, a) => {
+    c = String(c).trim();
+    if (/^#[0-9a-f]{3}$/i.test(c)) c = '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
+    if (a >= 1 || !/^#[0-9a-f]{6}$/i.test(c)) return c;
+    const n = parseInt(c.slice(1), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  };
+  /** Un dégradé linéaire du SVG → un dégradé du canvas (bb : la boîte de la forme, pour objectBoundingBox) */
+  function degradeCanvas(g, el, bb) {
+    if (!el || el.tagName !== 'linearGradient') return null;
+    const U = el.getAttribute('gradientUnits') === 'userSpaceOnUse';
+    if (!U && !bb) return null;
+    const lit = (k, d) => { const v = el.getAttribute(k); if (v == null) return d; return String(v).trim().endsWith('%') ? parseFloat(v) / 100 : parseFloat(v); };
+    const X = (u) => (U ? u : bb[0] + u * (bb[2] - bb[0])), Y = (v) => (U ? v : bb[1] + v * (bb[3] - bb[1]));
+    const gr = g.createLinearGradient(X(lit('x1', 0)), Y(lit('y1', 0)), X(lit('x2', 1)), Y(lit('y2', 0)));
+    el.querySelectorAll('stop').forEach((s) => {
+      const o = s.getAttribute('offset'), a = s.getAttribute('stop-opacity');
+      gr.addColorStop(Math.min(1, Math.max(0, String(o).endsWith('%') ? parseFloat(o) / 100 : parseFloat(o) || 0)), rgba(s.getAttribute('stop-color') || '#000000', a == null ? 1 : +a));
+    });
+    return gr;
+  }
+
+  class NoeudToile {
+    constructor(toile, tag) {
+      this.toile = toile; this.tag = tag; this.enfants = []; this.parent = null;
+      this.a = Object.create(null);
+      this.m = null; this.op = 1;
+      this.css = null; // l'opacité posée par le style : { cible, de, t0, dur, ease } (sa transition comprise)
+      this.trans = null; // style.transition (pour l'opacité)
+      this.origine = null; // style.transformOrigin
+      this.anim = null;
+      this.p = undefined; this.bb = null; this.peint = null; // (le tracé, sa boîte, ses dégradés : en cache)
+      const n = this;
+      this.style = {
+        set opacity(v) { n.toile.opacite(n, v === '' || v == null ? null : +v); },
+        get opacity() { return n.css ? String(n.css.cible) : ''; },
+        set transition(v) { n.trans = lireTransition(v); },
+        get transition() { return ''; },
+        set transformOrigin(v) { const p = String(v).match(/-?[\d.]+/g); n.origine = p ? [+p[0], +(p[1] || 0)] : null; n.toile.marque(); },
+        set transformBox(v) { /* (le repère de la toile est celui du SVG) */ },
+      };
+    }
+    setAttribute(k, v) {
+      v = String(v);
+      this.a[k] = v;
+      if (k === 'transform') this.m = v ? lireTransform(v) : null;
+      else if (k === 'opacity') this.op = +v;
+      else if (k === 'id') this.toile.ids.set(v, this);
+      else if (k !== 'class' && k !== 'style' && k !== 'pointer-events') { this.p = undefined; this.peint = null; }
+      this.toile.marque();
+    }
+    getAttribute(k) { return k in this.a ? this.a[k] : null; }
+    removeAttribute(k) {
+      delete this.a[k];
+      if (k === 'transform') this.m = null;
+      else if (k === 'opacity') this.op = 1;
+      else { this.p = undefined; this.peint = null; }
+      this.toile.marque();
+    }
+    appendChild(n) { n.parent = this; this.enfants.push(n); this.toile.marque(); return n; }
+    get children() { return this.enfants; }
+    get isConnected() { return true; }
+    animate(kf, o) { return new AnimToile(this, kf, o || {}); }
+    /** Un attribut de présentation, hérité des groupes parents */
+    prop(k, d) { for (let n = this; n; n = n.parent) if (k in n.a) return n.a[k]; return d; }
+    opacite(now) {
+      let o = this.op;
+      const c = this.css;
+      if (c) o = c.t0 != null && now < c.t0 + c.dur ? c.de + (c.cible - c.de) * c.ease(Math.max(0, (now - c.t0) / c.dur)) : c.cible;
+      const v = this.anim && this.anim.v;
+      if (v && v.op != null) o = v.op;
+      return o;
+    }
+    matrice() {
+      const v = this.anim && this.anim.v;
+      if (v && v.m) { const o = this.origine; return o ? mul(mul([1, 0, 0, 1, o[0], o[1]], v.m), [1, 0, 0, 1, -o[0], -o[1]]) : v.m; }
+      return this.m;
+    }
+    /** Le tracé (Path2D) et sa boîte, d'après la forme */
+    chemin() {
+      if (this.p !== undefined) return this.p;
+      const a = this.a, n = (k) => parseFloat(a[k]) || 0;
+      let p = null, bb = null;
+      if (this.tag === 'path') { if (a.d) { p = new Path2D(a.d); bb = bornesChemin(a.d); } }
+      else if (this.tag === 'rect') {
+        const x = n('x'), y = n('y'), w = n('width'), h = n('height'), r = Math.min(n('rx') || n('ry'), w / 2, h / 2);
+        if (r > 0) p = new Path2D(dRR(x, y, w, h, r)); else { p = new Path2D(); p.rect(x, y, w, h); }
+        bb = [x, y, x + w, y + h];
+      } else if (this.tag === 'circle') {
+        const cx = n('cx'), cy = n('cy'), r = n('r');
+        p = new Path2D(); p.arc(cx, cy, r, 0, CO.TAU);
+        bb = [cx - r, cy - r, cx + r, cy + r];
+      } else if (this.tag === 'ellipse') {
+        const cx = n('cx'), cy = n('cy'), rx = n('rx'), ry = n('ry');
+        p = new Path2D(); p.ellipse(cx, cy, rx, ry, 0, 0, CO.TAU);
+        bb = [cx - rx, cy - ry, cx + rx, cy + ry];
+      }
+      this.p = p; this.bb = bb;
+      return p;
+    }
+  }
+
+  /* Une animation de la toile : les images clés de WAAPI (transform : translate, rotate ; opacity), propriété
+     par propriété, sa courbe, ses itérations ; le temps est quantifié à sa cadence (ips) */
+  class AnimToile {
+    constructor(n, kf, o) {
+      this.n = n; this.toile = n.toile;
+      this.effect = { target: n, getKeyframes: () => kf };
+      this.dur = Math.max(1, +o.duration || 0); this.delai = +o.delay || 0;
+      this.iter = o.iterations == null ? 1 : +o.iterations; this.alt = o.direction === 'alternate';
+      this.ease = courbe(o.easing); this.pas = o.ips ? 1000 / o.ips : 0;
+      const off = kf.map((k) => (k.offset != null ? +k.offset : null));
+      if (off[0] == null) off[0] = 0;
+      if (off[off.length - 1] == null) off[off.length - 1] = off.length > 1 ? 1 : 0;
+      for (let i = 1; i < off.length - 1; i++) if (off[i] == null) { let j = i + 1; while (off[j] == null) j++; const a = off[i - 1]; for (let q = i; q < j; q++) off[q] = a + ((off[j] - a) * (q - i + 1)) / (j - i + 1); }
+      this.tr = []; this.opk = [];
+      kf.forEach((k, i) => {
+        if (k.transform != null) this.tr.push([off[i], fonctionsCss(k.transform), courbe(k.easing)]);
+        if (k.opacity != null) this.opk.push([off[i], +k.opacity, courbe(k.easing)]);
+      });
+      this.t0 = performance.now(); this.vu = null; this.v = null; this.playState = 'running';
+      if (n.anim) n.anim.cancel();
+      n.anim = this;
+      this.toile.anims.add(this);
+      this.toile.marque();
+    }
+    cancel() {
+      if (this.playState === 'idle') return;
+      this.playState = 'idle';
+      this.toile.anims.delete(this);
+      if (this.n.anim === this) this.n.anim = null;
+      this.toile.marque();
+    }
+    /** Le temps (quantifié) a-t-il changé ? On recalcule la valeur ; vrai si elle a changé */
+    calcule(now) {
+      let t = now - this.t0;
+      if (this.pas) t = Math.floor(t / this.pas) * this.pas;
+      if (t === this.vu) return false;
+      this.vu = t;
+      const l = t - this.delai, avant = this.v;
+      if (l < 0 || (isFinite(this.iter) && l >= this.iter * this.dur)) { this.v = null; return avant !== null; }
+      const it = Math.floor(l / this.dur);
+      let p = (l - it * this.dur) / this.dur;
+      if (this.alt && it % 2) p = 1 - p;
+      p = this.ease(p);
+      const v = { m: this.tr.length ? matriceCss(interpole(this.tr, p, true)) : null, op: this.opk.length ? interpole(this.opk, p, false) : null };
+      const pareil = avant && avant.op === v.op && (avant.m === v.m || (avant.m && v.m && avant.m.every((x, i) => Math.abs(x - v.m[i]) < 1e-6)));
+      this.v = v;
+      return !pareil;
+    }
+    /** L'instant du prochain changement possible */
+    prochain(now) {
+      if (!this.pas) return now + 16;
+      return this.t0 + (Math.floor((now - this.t0) / this.pas) + 1) * this.pas;
+    }
+  }
+  function interpole(k, p, tr) {
+    let i = 0;
+    while (i < k.length - 2 && p > k[i + 1][0]) i++;
+    const [o0, v0, e0] = k[i], [o1, v1] = k[Math.min(i + 1, k.length - 1)];
+    const u = o1 > o0 ? e0(Math.min(1, Math.max(0, (p - o0) / (o1 - o0)))) : 0;
+    if (!tr) return v0 + (v1 - v0) * u;
+    return v0.map(([nom, a], j) => [nom, a.map((x, q) => x + ((v1[j] && v1[j][1][q] != null ? v1[j][1][q] : x) - x) * u)]);
+  }
+
+  class Toile {
+    constructor(cv, defs) {
+      this.cv = cv; this.g = cv.getContext('2d'); this.defs = defs;
+      this.ids = new Map(); this.anims = new Set(); this.trans = new Set(); this.clips = new Map();
+      this.racine = new NoeudToile(this, 'g');
+      this.base = MI; this.sale = true; this.prevu = false; this.raf = 0; this.minuteur = 0; this.pret = false;
+      this.hors = []; // les toiles à part (opacité d'un groupe), une par profondeur
+      this.visible = () => true;
+      this.boucleFn = () => this.boucle();
+      this.images = 0;
+    }
+    cree(tag, attrs, parent) {
+      const n = new NoeudToile(this, tag);
+      if (attrs) for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+      if (parent) parent.appendChild(n);
+      return n;
+    }
+    /** La boîte de la toile : son origine (unités de la scène), son échelle (px du canvas par unité), sa taille en px */
+    poser(x0, y0, k, W, H) {
+      if (this.cv.width !== W) this.cv.width = W;
+      if (this.cv.height !== H) this.cv.height = H;
+      this.base = [k, 0, 0, k, -x0 * k, -y0 * k];
+      this.hors.forEach((c) => { c.width = W; c.height = H; });
+      this.pret = W > 0 && H > 0;
+      this.marque();
+    }
+    /** Quelque chose a changé : on repeint à la fin de la tâche (une seule fois) */
+    marque() {
+      this.sale = true;
+      if (!this.prevu) { this.prevu = true; queueMicrotask(() => { this.prevu = false; this.tic(performance.now()); }); }
+    }
+    opacite(n, v) {
+      const now = performance.now();
+      if (v == null) { n.css = null; this.trans.delete(n); this.marque(); return; }
+      const t = n.trans, de = n.opacite(now);
+      if (t && t.dur > 0 && Math.abs(de - v) > 1e-4) { n.css = { cible: v, de, t0: now, dur: t.dur, ease: t.ease }; this.trans.add(n); }
+      else { n.css = { cible: v }; this.trans.delete(n); }
+      this.marque();
+    }
+    /** Une image (si la scène se voit) : les animations à leur cadence, les transitions, le dessin ; puis la suite */
+    tic(now) {
+      if (!this.visible()) return;
+      this.anims.forEach((a) => { if (a.calcule(now)) this.sale = true; });
+      this.trans.forEach((n) => { this.sale = true; if (now >= n.css.t0 + n.css.dur) this.trans.delete(n); });
+      if (this.sale) this.dessine(now);
+      this.planifie(now);
+    }
+    boucle() { this.raf = 0; this.tic(performance.now()); }
+    /** La prochaine image : à chaque image pendant une transition, sinon au prochain changement d'une animation */
+    planifie(now) {
+      if (this.raf || this.minuteur || !this.visible()) return;
+      if (this.trans.size) { this.raf = requestAnimationFrame(this.boucleFn); return; }
+      if (!this.anims.size) return;
+      let p = Infinity;
+      this.anims.forEach((a) => { p = Math.min(p, a.prochain(now)); });
+      const d = p - now;
+      if (d > 24) this.minuteur = setTimeout(() => { this.minuteur = 0; this.raf = requestAnimationFrame(this.boucleFn); }, d - 12);
+      else this.raf = requestAnimationFrame(this.boucleFn);
+    }
+    /** Réveil (la scène se voit de nouveau) : on repeint ce qui a changé entre-temps */
+    reveil() { this.sale = true; this.tic(performance.now()); }
+    dessine(now) {
+      this.sale = false;
+      const g = this.g, cv = this.cv;
+      if (!this.pret) return;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = 1;
+      g.clearRect(0, 0, cv.width, cv.height);
+      this.peindre(g, this.racine, this.base, 1, now, 0);
+      g.globalAlpha = 1;
+      this.images++;
+    }
+    horsChamp(niv) {
+      if (!this.hors[niv]) { const c = document.createElement('canvas'); c.width = this.cv.width; c.height = this.cv.height; this.hors[niv] = c; }
+      return this.hors[niv];
+    }
+    peindre(g, n, M, alpha, now, niv) {
+      const op = n.opacite(now);
+      if (!(op > 0.0005)) return;
+      const Ml = n.matrice(), Mn = Ml ? mul(M, Ml) : M;
+      const clip = this.clip(n);
+      if (clip) { g.save(); g.setTransform(Mn[0], Mn[1], Mn[2], Mn[3], Mn[4], Mn[5]); g.clip(clip); }
+      if (n.tag === 'g' || n.tag === 'use') {
+        const enfants = n.tag === 'use' ? this.ref(n) : n.enfants;
+        if (op < 0.9995 && (enfants.length > 1 || (enfants[0] && enfants[0].enfants.length))) {
+          // l'opacité d'un groupe : peint à part, puis posé d'un coup (comme en SVG)
+          const h = this.horsChamp(niv), gh = h.getContext('2d');
+          gh.setTransform(1, 0, 0, 1, 0, 0); gh.globalAlpha = 1; gh.clearRect(0, 0, h.width, h.height);
+          enfants.forEach((c) => this.peindre(gh, c, Mn, 1, now, niv + 1));
+          g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = alpha * op; g.drawImage(h, 0, 0); g.restore();
+        } else enfants.forEach((c) => this.peindre(g, c, Mn, alpha * op, now, niv));
+      } else this.forme(g, n, Mn, alpha * op);
+      if (clip) g.restore();
+    }
+    ref(n) {
+      const r = this.ids.get(String(n.a.href || n.a['xlink:href'] || '').replace('#', ''));
+      return r ? [r] : [];
+    }
+    forme(g, n, M, alpha) {
+      const p = n.chemin();
+      if (!p) return;
+      g.setTransform(M[0], M[1], M[2], M[3], M[4], M[5]);
+      const fill = n.prop('fill', '#000000'), stroke = n.prop('stroke', 'none');
+      if (fill && fill !== 'none') {
+        g.globalAlpha = alpha * +n.prop('fill-opacity', 1);
+        g.fillStyle = this.peinture(g, n, fill);
+        g.fill(p);
+      }
+      if (stroke && stroke !== 'none') {
+        g.globalAlpha = alpha * +n.prop('stroke-opacity', 1);
+        g.strokeStyle = this.peinture(g, n, stroke);
+        g.lineWidth = +n.prop('stroke-width', 1);
+        g.lineCap = n.prop('stroke-linecap', 'butt');
+        g.lineJoin = n.prop('stroke-linejoin', 'miter');
+        g.miterLimit = 4;
+        const da = n.prop('stroke-dasharray', null);
+        g.setLineDash(da && da !== 'none' ? da.split(/[\s,]+/).map(parseFloat) : []);
+        g.stroke(p);
+        g.setLineDash([]);
+      }
+    }
+    /** Une couleur, ou un dégradé des defs du SVG (url(#…)), pour cette forme et cette toile */
+    peinture(g, n, v) {
+      if (v.slice(0, 4) !== 'url(') return v;
+      const c = n.peint || (n.peint = new Map());
+      if (!c.has(g)) {
+        const el = this.defs.querySelector('#' + v.slice(5, -1).trim());
+        c.set(g, degradeCanvas(g, el, n.bb) || 'rgba(0,0,0,0)');
+      }
+      return c.get(g);
+    }
+    /** clip-path : url(#…) → un Path2D (les rectangles et tracés du clipPath), dans le repère de l'élément */
+    clip(n) {
+      const v = n.a['clip-path'];
+      if (!v) return null;
+      if (!this.clips.has(v)) {
+        const el = this.defs.querySelector('#' + v.slice(5, -1).trim());
+        let p = null;
+        if (el) {
+          p = new Path2D();
+          [...el.children].forEach((c) => {
+            if (c.tagName === 'rect') p.rect(+c.getAttribute('x'), +c.getAttribute('y'), +c.getAttribute('width'), +c.getAttribute('height'));
+            else if (c.tagName === 'path' && c.getAttribute('d')) p.addPath(new Path2D(c.getAttribute('d')));
+          });
+        }
+        this.clips.set(v, p);
+      }
+      return this.clips.get(v);
+    }
+  }
+
+  /* ======================================================================
      Construction
      ====================================================================== */
   async function create(host, opts = {}) {
     sonsPorte();
-    { // les polices de l'appli (par ses variables) : on attend un peu qu'elles arrivent, sinon repli
-      const cs = getComputedStyle(host);
-      const fam = (v) => (cs.getPropertyValue(v) || '').trim();
-      const charge = [['700', '--large'], ['600', '--sans'], ['400', '--stylo'], ['700', '--chiffres']]
-        .filter(([, v]) => fam(v)).map(([w, v]) => document.fonts.load(`${w} 12px ${fam(v)}`).catch(() => null));
-      try { await Promise.race([Promise.all(charge), CO.wait(1200)]); } catch (e) { /* repli */ }
+    tTranche = performance.now();
+    { // les polices de l'appli : on attend un peu qu'elles arrivent, sinon repli (sans lire le style de la page :
+      // ses faces chargeables, celles du latin de base, d'après document.fonts)
+      const faces = [];
+      try { if (document.fonts) document.fonts.forEach((ff) => { if (ff.status === 'unloaded' && /U\+0{0,4}(-|,|$)|U\+0+-/i.test(ff.unicodeRange || 'U+0-10FFFF')) faces.push(ff.load().catch(() => null)); else if (ff.status === 'loading') faces.push(ff.loaded.catch(() => null)); }); } catch (e) { /* repli */ }
+      if (faces.length) { try { await Promise.race([Promise.all(faces), CO.wait(1200)]); } catch (e) { /* repli */ } }
     }
+    await tranche();
     const R = CO.rng(opts.graine || 0x63);
     const svg = S('svg', {
       viewBox: '0 0 400 560', class: 'co-facade', preserveAspectRatio: 'xMidYMax meet', role: 'img',
       'aria-label': "La devanture de Cordo 63, à l'angle de la rue Verdier-Latour : derrière les vitres, l'atelier éclairé et Clément au travail",
     });
-    svg.style.cssText = 'display:block;width:100%;height:100%;overflow:visible;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none';
+    svg.style.cssText = 'position:absolute;left:0;top:0;display:block;width:100%;height:100%;overflow:visible';
     { // le décor déborde de la scène : l'hôte le coupe (jamais de barre de défilement) ; il porte aussi un calque HTML
-      const cs = getComputedStyle(host);
-      if (cs.overflowX === 'visible' || cs.overflowY === 'visible') host.style.overflow = 'hidden';
-      if (cs.position === 'static') host.style.position = 'relative';
+      // (sa propre feuille de style : pas besoin de lire le style calculé de l'hôte)
+      if (!host.style.overflow) host.style.overflow = 'hidden';
+      if (!host.style.position && !/facade-host/.test(host.className)) host.style.position = 'relative';
     }
+    // la pile : le grand SVG et les couches qui vivent par-dessus ; c'est elle que la caméra déplace (pas
+    // isolée : les lumières en « screen » se mêlent aussi au fond de la page, là où le trottoir s'efface)
+    const pile = document.createElement('div');
+    pile.className = 'cf-pile';
+    pile.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;transform-origin:0 0;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none';
+    pile.appendChild(svg);
     S('style', {}, svg).textContent =
-      '.co-facade .cf-hit{cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}' +
-      '.co-facade .cf-hit:focus{outline:none}' +
-      '.co-facade .cf-hit:focus-visible{fill:#FFE9B0;fill-opacity:.12;stroke:#F4C75E;stroke-width:1.8;stroke-dasharray:5 3}';
+      '.cf-pile .cf-hit{position:absolute;cursor:pointer;outline:none;border-radius:2px;-webkit-tap-highlight-color:transparent;touch-action:manipulation;pointer-events:auto}' +
+      '.cf-pile .cf-hit:focus{outline:none}' +
+      '.cf-pile .cf-hit>svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;display:none;pointer-events:none}' +
+      '.cf-pile .cf-hit:focus-visible>svg{display:block}';
     const defs = S('defs', {}, svg);
     const U = (p) => CO.uid('cf' + p);
     function degrade(tag, stops, o) {
@@ -263,7 +770,8 @@
       S('image', { href: url, width: taille, height: taille, preserveAspectRatio: 'none' }, S('pattern', { id, width: taille, height: taille, patternUnits: 'userSpaceOnUse' }, defs));
       return `url(#${id})`;
     };
-    const ENDUIT = motif(texEnduit(), 160), GRAIN = motif(texGrain(), 48);
+    const ENDUIT = motif(await texEnduit(), 160), GRAIN = motif(await texGrain(), 48);
+    await tranche();
 
     /* ---------- la mise en page (unités de la scène) ---------- */
     const SOL = 478; // le trottoir, au pied de la devanture
@@ -281,18 +789,75 @@
     const FUITE = [-760, 316];
     const RET = (t, y) => [FUITE[0] * t, y + (FUITE[1] - y) * t];
     const quadR = (t0, t1, y0, y1) => dPoly([RET(t0, y0), RET(t1, y0), RET(t1, y1), RET(t0, y1)]);
+    // les couches posées sur le grand SVG : leur boîte, en unités de la scène (on les cale sur les pixels de l'écran)
+    const BOITES = {
+      devant: { x: -24, y: 290, w: 134, h: 290 }, // le poteau, l'ardoise
+      vitrine: { x: 44, y: 273, w: 145, h: 123 }, // la toile : la finisseuse, l'établi, Clément
+      avant: { x: 18, y: 244, w: 340, h: 158 }, // les voiles de l'atelier, la teinte des vitres
+      porte: { x: 268, y: 242, w: 94, h: 238 }, // le vantail et ce qui le suit, son chant
+      reflet: { x: 24, y: 246, w: 330, h: 160 }, // la toile du reflet qui passe
+      flaque: { x: 160, y: 470, w: 300, h: 110 }, // la lumière de la porte sur le trottoir
+      halo: { x: 220, y: 240, w: 182, h: 280 }, // son halo, ses poussières
+      entree: { x: 185, y: 230, w: 260, h: 352 }, // la lumière dans laquelle on entre
+    };
+    const couches = []; // [élément, boîte] : posés par disposer()
+    /** Une couche SVG du même repère que le grand (viewBox = sa boîte), sans pointeur */
+    const couche = (b, cls, style = '') => {
+      const s = CO.svg('svg', { class: cls, 'aria-hidden': 'true', focusable: 'false', preserveAspectRatio: 'none' });
+      s.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;display:block;pointer-events:none;' + style;
+      couches.push([s, b, 'svg']);
+      return s;
+    };
+    const toileCouche = (b, cls) => {
+      const cv = document.createElement('canvas');
+      cv.className = cls;
+      cv.setAttribute('aria-hidden', 'true');
+      cv.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;display:block;pointer-events:none';
+      couches.push([cv, b, 'canvas']);
+      return cv;
+    };
+    const devantSvg = couche(BOITES.devant, 'cf-couche cf-devant-svg', 'overflow:visible');
+    const cvVitrine = toileCouche(BOITES.vitrine, 'cf-couche cf-vitrine');
+    const avantSvg = couche(BOITES.avant, 'cf-couche cf-avant-svg');
+    // la porte : l'intérieur vu par l'ouverture (fixe), le vantail (percé à sa vitre) et ses vinyles, la pancarte,
+    // la teinte de la vitre, le chant ; chacune dans le même repère (leur origine de transformation : le coin de
+    // leur boîte, pour le courant d'air joué sur le compositeur)
+    const porteFondSvg = couche(BOITES.porte, 'cf-couche cf-porte-fond');
+    const porteSvg = couche(BOITES.porte, 'cf-couche cf-porte-svg', 'transform-origin:0 0');
+    const pancarteSvg = couche(BOITES.porte, 'cf-couche cf-pancarte-svg', 'transform-origin:0 0');
+    const teinteSvg = couche(BOITES.porte, 'cf-couche cf-teinte-porte', 'transform-origin:0 0');
+    const chantSvg = couche(BOITES.porte, 'cf-couche cf-chant-svg', 'opacity:.8;transform-origin:0 0');
+    const cvReflet = toileCouche(BOITES.reflet, 'cf-couche cf-reflet');
+    cvReflet.style.visibility = 'hidden';
+    const flaqueSvg = couche(BOITES.flaque, 'cf-couche cf-flaque-svg', 'mix-blend-mode:screen;opacity:0;transform-origin:0 0');
+    const haloDiv = document.createElement('div');
+    haloDiv.className = 'cf-couche cf-halo';
+    haloDiv.setAttribute('aria-hidden', 'true');
+    haloDiv.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;mix-blend-mode:screen;opacity:0';
+    couches.push([haloDiv, BOITES.halo, 'div']);
+    const entreeSvg = couche(BOITES.entree, 'cf-couche cf-entree-svg', 'mix-blend-mode:screen;opacity:0;visibility:hidden');
+    // la toile de la vitrine : ce qui vit derrière la vitre (découpé aux vitres de l'atelier)
+    const vitrine = new Toile(cvVitrine, defs);
 
     /* ---------- les calques ---------- */
     const monde = G(svg, { class: 'cf-monde' });
-    const voile = rect(svg, -1400, -1400, 3800, 1980, linU(500, 548, [[0, P.nuit], [1, P.nuit, 0]]), { opacity: 0, class: 'cf-voile', 'pointer-events': 'none' });
+    const VOILE_D = linU(500, 548, [[0, P.nuit], [1, P.nuit, 0]]);
+    const voile = rect(svg, -1400, -1400, 3800, 1980, VOILE_D, { opacity: 0, class: 'cf-voile', 'pointer-events': 'none' });
     const lueurs = G(svg, { class: 'cf-lueurs', 'pointer-events': 'none', opacity: 0 }); // le soir : la lanterne, les vitrines sur le trottoir
     const quadr = G(svg, { class: 'cf-quadrillage', 'pointer-events': 'none' });
     const dedans = G(svg, { class: 'cf-dedans', 'pointer-events': 'none' });
     const vinyles = G(svg, { class: 'cf-vinyles', 'pointer-events': 'none' });
-    const reflets = G(svg, { class: 'cf-reflets', 'pointer-events': 'none' });
-    const vie = G(svg, { class: 'cf-vie', 'pointer-events': 'none' });
-    const devant = G(svg, { class: 'cf-devant', 'pointer-events': 'none' });
-    const touches = G(svg, { class: 'cf-touches' });
+    // le devant (poteau, ardoise) : sa propre couche, posée juste au-dessus du grand SVG (rien ne le recouvre)
+    const devant = G(devantSvg, { class: 'cf-devant', 'pointer-events': 'none' });
+    // les couches de l'avant : chacune a ses groupes « jumeaux » de ceux du grand SVG (mêmes fondus)
+    const avDedans = G(avantSvg, { class: 'cf-dedans' });
+    const avReflets = G(avantSvg, { class: 'cf-reflets' });
+    const pDedans = G(porteFondSvg, { class: 'cf-dedans' });
+    const pBoutique = G(porteSvg, { class: 'cf-boutique' });
+    const pSur = G(porteSvg, { class: 'cf-sur-vantail' }); // ce qui couvre le vantail dans la rue (découpé à lui)
+    const pVinyles = G(porteSvg, { class: 'cf-vinyles' });
+    const pVinylesP = G(pancarteSvg, { class: 'cf-vinyles' });
+    const pReflets = G(teinteSvg, { class: 'cf-reflets' });
     // le soir, ce qui est devant (au-dessus du voile de la rue) a son propre voile : ses couleurs mêlées au bleu nuit
     const nuitF = U('nf');
     const nuitM = S('feColorMatrix', { type: 'matrix', values: '1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0' },
@@ -343,6 +908,7 @@
       // le sol de l'autre rue, sous le retour
       path(retour, dPoly([[0, SOL], RET(TM, SOL), [RET(TM, SOL)[0], SOL]]), '#A29E95');
     }
+    await tranche();
 
     // le mur de l'immeuble : enduit crème (il continue à droite sur les écrans larges)
     const mur = G(monde, { class: 'cf-mur' });
@@ -421,6 +987,7 @@
     rect(plaque, 19, 115.6, 36, 8, '#fff', { opacity: 0.1, rx: 2 });
     texte(plaque, 'RUE', 37, 122, 3.4, FONTE.chiffres + ';font-weight:600', { 'text-anchor': 'middle', fill: '#F4F3EE', 'letter-spacing': 0.4 });
     texte(plaque, 'VERDIER-LATOUR', 37, 129.6, 5, FONTE.chiffres + ';font-weight:700', { 'text-anchor': 'middle', fill: '#F4F3EE', textLength: 29, lengthAdjust: 'spacingAndGlyphs' });
+    await tranche();
 
     // à droite de la boutique : la porte de l'immeuble, en chêne sombre, sous sa lanterne
     const immeuble = G(monde, { class: 'cf-porte-immeuble' });
@@ -489,6 +1056,7 @@
       rect(ombreIn, x + w - 5, y + 3, 5, h - 6, barreV);
       rect(ombreIn, x + w - 4, ANCRE.y - 3, ANCRE.x - x - w + 6, 6, barreH);
     }
+    await tranche();
 
     /* ======================================================================
        La devanture : corniche, bandeau, pilastres, baies, porte
@@ -609,28 +1177,39 @@
     rect(boutique, 358, 256, 16, 14, '#1F4F9C', { rx: 2 });
     rect(boutique, 359.2, 257.2, 13.6, 11.6, 'none', { rx: 1.4, stroke: '#F4F3EE', 'stroke-width': 0.6 });
     texte(boutique, '6', 366, 267.6, 10.5, FONTE.chiffres + ';font-weight:700', { 'text-anchor': 'middle', fill: '#F4F3EE' });
+    await tranche();
 
     /* ---------- la porte : vantail vitré vert, gonds à droite, entrouvert vers l'intérieur ----------
        Le vantail est dessiné à plat puis projeté : les grandes pièces point par point, les petites
        (poignée, pancarte, vinyle) par un repère local linéarisé. La boutique se voit par
-       l'entrebâillement (côté gauche : la lumière sort vers le milieu de la rue) et par la vitre. */
+       l'entrebâillement (côté gauche : la lumière sort vers le milieu de la rue) et par la vitre.
+       Le dormant et l'ouverture sont dans le grand SVG ; dans les couches de la porte, l'intérieur vu
+       par l'ouverture (fixe : le vantail, percé à sa vitre, le couvre), le vantail et ses vinyles, la
+       pancarte, la teinte de la vitre (repeints seulement quand la porte tourne vraiment). */
     const PO = { gond: 350, oeilX: 200, oeilY: 316, focale: 700 };
     const ENTRE = (50 * Math.PI) / 180, GRAND = (84 * Math.PI) / 180, SEUIL_ANGLE = (96 * Math.PI) / 180; // entrouverte, grande ouverte, rabattue contre le mur (on entre)
     let theta = ENTRE;
-    const proj = (x, y) => {
-      const d = PO.gond - x, X = PO.gond - d * Math.cos(theta), Z = d * Math.sin(theta), s = PO.focale / (PO.focale + Z);
+    const projA = (th, x, y) => {
+      const d = PO.gond - x, X = PO.gond - d * Math.cos(th), Z = d * Math.sin(th), s = PO.focale / (PO.focale + Z);
       return [PO.oeilX + (X - PO.oeilX) * s, PO.oeilY + (y - PO.oeilY) * s];
     };
+    const proj = (x, y) => projA(theta, x, y);
     const pt = (x, y) => { const p = proj(x, y); return f(p[0]) + ' ' + f(p[1]); };
     const polyD = (pts) => 'M' + pts.map(([x, y]) => pt(x, y)).join('L') + 'Z';
     const quadD = (x, y, w, h) => polyD([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
-    const affine = (cx, cy, k = 10) => { // la projection, linéarisée autour de (cx, cy)
-      const a0 = proj(cx - k, cy), a1 = proj(cx + k, cy), b0 = proj(cx, cy - k), b1 = proj(cx, cy + k), p0 = proj(cx, cy);
+    /** La projection, linéarisée autour de (cx, cy) : une matrice [a b c d e f] (à l'angle th) */
+    const affineM = (cx, cy, th = theta, k = 10) => {
+      const a0 = projA(th, cx - k, cy), a1 = projA(th, cx + k, cy), b0 = projA(th, cx, cy - k), b1 = projA(th, cx, cy + k), p0 = projA(th, cx, cy);
       const a = (a1[0] - a0[0]) / (2 * k), b = (a1[1] - a0[1]) / (2 * k), c = (b1[0] - b0[0]) / (2 * k), d = (b1[1] - b0[1]) / (2 * k);
-      return `matrix(${[a, b, c, d, p0[0] - a * cx - c * cy, p0[1] - b * cx - d * cy].map((v) => Math.round(v * 10000) / 10000).join(' ')})`;
+      return [a, b, c, d, p0[0] - a * cx - c * cy, p0[1] - b * cx - d * cy].map((v) => Math.round(v * 10000) / 10000);
     };
+    const affine = (cx, cy) => `matrix(${affineM(cx, cy).join(' ')})`;
     const LP = [], LT = [];
     const piece = (par, fill, fn, extra = {}) => { const el = path(par, fn(), fill, extra); LP.push([el, fn]); return el; };
+    // le vantail est percé à sa vitre (on y voit l'intérieur, qui est dessous) : son contour moins la vitre
+    const clipVantail = U('cw');
+    const clipVantailP = S('path', { 'clip-rule': 'evenodd' }, S('clipPath', { id: clipVantail }, defs));
+    pBoutique.setAttribute('clip-path', `url(#${clipVantail})`);
 
     const porteG = G(boutique, { class: 'cf-porte' });
     rect(porteG, 275, 248, 79, 226, P.vertOmbre); // le dormant
@@ -640,7 +1219,7 @@
     rect(porteG, 275, 266, 79, 4, P.vert);
     rect(porteG, 275, 269.2, 79, 0.8, P.vertNoir);
     rect(porteG, 279, 270, 71, 204, '#17110D'); // l'ouverture (la boutique se dessine dans son calque)
-    const vantail = G(porteG, { class: 'cf-vantail' });
+    const vantail = G(pBoutique, { class: 'cf-vantail' });
     const VA = { x: 279, y: 270, w: 71, h: 204, vx: 288, vy: 280, vw: 53, vh: 122 }; // le vantail et sa vitre, à plat
     piece(vantail, P.vert, () => quadD(VA.x, VA.y, VA.w, VA.h));
     piece(vantail, P.vertClair, () => quadD(VA.x, VA.y, VA.w, 1.4));
@@ -686,7 +1265,8 @@
     if (opts.ardoise) path(trottoir, dEll(66, 548, 48, 5), '#000', { opacity: 0.2 });
     path(trottoir, dEll(-9, 506, 6, 1.6), '#000', { opacity: 0.3 });
     // la lumière du jour : le soleil vient d'en haut à gauche, la rue est plus fraîche au ras du sol
-    rect(monde, -1400, -1400, 3800, 1880, linU(0, 500, [[0, '#FFF1D6', 0.12], [0.5, '#FFF1D6', 0], [1, '#26344A', 0.12]], -20, 440), { 'pointer-events': 'none' });
+    const JOUR = linU(0, 500, [[0, '#FFF1D6', 0.12], [0.5, '#FFF1D6', 0], [1, '#26344A', 0.12]], -20, 440);
+    rect(monde, -1400, -1400, 3800, 1880, JOUR, { 'pointer-events': 'none' });
 
     // le quadrillage fantôme d'un tapis de découpe vert (au-dessus du voile : il ne bleuit pas)
     {
@@ -699,6 +1279,7 @@
       path(quadr, gras.join(''), 'none', { stroke: encre, 'stroke-width': 0.65 });
       path(quadr, diag.join(''), 'none', { stroke: encre, 'stroke-width': 0.4, 'stroke-dasharray': '2 1.5' });
     }
+    await tranche();
 
     /* ======================================================================
        Les intérieurs éclairés (au-dessus du voile du soir)
@@ -707,6 +1288,9 @@
     const cla = S('clipPath', { id: clipAtelier }, defs);
     PANES.forEach(([x, y, w, h]) => rect(cla, x, y, w, h, null));
     const atelier = G(dedans, { 'clip-path': `url(#${clipAtelier})`, class: 'cf-atelier' });
+    // dans la toile de la vitrine, la même découpe aux vitres
+    const vitR = vitrine.racine;
+    vitR.setAttribute('clip-path', `url(#${clipAtelier})`);
 
     // le mur de pierre apparente, au fond (lumière chaude, pierres calcaires dans leur mortier)
     rect(atelier, 20, 248, 260, 150, '#5A4B3D');
@@ -762,7 +1346,8 @@
       path(pr, sp.join(''), 'none', { stroke: '#3C8FD8', 'stroke-width': 1 });
     }
 
-    // la finisseuse rouge : brosses et meules sur l'arbre, qui tournent
+    // la finisseuse rouge : brosses et meules sur l'arbre, qui tournent (le corps, dans le grand SVG ; ce qui
+    // tourne et ce qui passe devant, dans la toile)
     const fin = G(atelier, { class: 'cf-finisseuse' });
     const brosses = []; // [x, largeur, rayon, couleur]
     {
@@ -792,11 +1377,12 @@
       });
       bb.flush(fin);
     }
+    const finT = G(vitR, { class: 'cf-finisseuse' });
     // la texture qui défile sur le chant des brosses (c'est ce qui les fait tourner)
     const clipBrosses = U('cb');
     const clb = S('clipPath', { id: clipBrosses }, defs);
     brosses.forEach(([x, w, r]) => rect(clb, x - w / 2, 361.3 - r, w, 2 * r, null));
-    const defile = G(G(fin, { 'clip-path': `url(#${clipBrosses})` }), { class: 'cf-defile' });
+    const defile = G(G(finT, { 'clip-path': `url(#${clipBrosses})` }), { class: 'cf-defile' });
     {
       const tb = seau();
       for (let y = 344; y < 380; y += 2.6) brosses.forEach(([x, w], i) => {
@@ -805,9 +1391,9 @@
       });
       tb.flush(defile);
     }
-    rect(fin, 46, 343, 76, 81, linU(0, 0, [[0, '#fff', 0.1], [0.5, '#fff', 0], [1, '#000', 0.2]], 46, 122));
+    rect(finT, 46, 343, 76, 81, linU(0, 0, [[0, '#fff', 0.1], [0.5, '#fff', 0], [1, '#000', 0.2]], 46, 122));
     // les mains de Clément à la finisseuse (on ne les voit que quand il y passe une chaussure)
-    const aLaBrosse = G(fin, { class: 'cf-a-la-brosse', opacity: 0 });
+    const aLaBrosse = G(finT, { class: 'cf-a-la-brosse', opacity: 0 });
     const chaussureBrosse = G(aLaBrosse, { class: 'cf-chaussure-brosse' });
     chaussureBrosse.style.transformOrigin = '124px 357px';
     {
@@ -818,11 +1404,12 @@
       path(aLaBrosse, 'M134 348.6L128.4 349.4Q125.6 350 126 352.4Q126.6 354.4 129.2 354L134 353.4Z', P.peauOmbre);
       rect(aLaBrosse, 131.2, 348.6, 2.2, 5, '#E0762C');
     }
-    const poussieres = G(atelier, { class: 'cf-poussieres', style: 'mix-blend-mode:screen' });
+    // (des poussières dorées, si fines qu'un simple fondu remplace le mode « screen »)
+    const poussieres = G(vitR, { class: 'cf-poussieres' });
     const grains = Array.from({ length: 12 }, () => S('circle', { cx: 116, cy: 357, r: f(0.45 + R() * 0.55), fill: '#FFE6BA', opacity: 0 }, poussieres));
 
     // l'établi, derrière Clément : plateau d'aggloméré usé, tapis de découpe vert, outils, pied de fer
-    const et = G(atelier, { class: 'cf-etabli' });
+    const et = G(vitR, { class: 'cf-etabli' });
     {
       path(et, 'M126 364L184 364L184 370L126 370Z', '#7A5A3E');
       path(et, 'M126 369.2L184 369.2L184 371L126 371Z', '#A07C58');
@@ -851,7 +1438,7 @@
       path(piedChaussure, 'M165 342.4L180.4 342.4', 'none', { stroke: '#B98A5C', 'stroke-width': 0.5 });
     }
     // le marteau, posé sur l'établi (quand Clément est à la finisseuse ou absent)
-    const marteauPose = G(atelier, { class: 'cf-marteau-pose', opacity: 0 });
+    const marteauPose = G(vitR, { class: 'cf-marteau-pose', opacity: 0 });
     path(marteauPose, 'M150 362.4L164 360.6', 'none', { stroke: '#B88A56', 'stroke-width': 1.3, 'stroke-linecap': 'round' });
     rect(marteauPose, 161.6, 357.4, 3, 6, '#6B7277', { rx: 0.6, transform: 'rotate(-8 163 360)' });
 
@@ -863,7 +1450,7 @@
       path(suspG, `M${x - 6} ${y - 0.4}Q${x - 5.4} ${y - 7} ${x} ${y - 7.6}`, 'none', { stroke: '#fff', 'stroke-width': 0.6, opacity: 0.25 });
       S('ellipse', { cx: x, cy: y + 0.2, rx: 7, ry: 1.3, fill: '#FFF2CF' }, suspG);
     });
-    const cone = path(atelier, 'M150 275L164 275L186 360L128 360Z', lin([[0, '#FFEFC7', 0.3], [1, '#FFEFC7', 0]]), { class: 'cf-cone' });
+    const cone = path(vitR, 'M150 275L164 275L186 360L128 360Z', lin([[0, '#FFEFC7', 0.3], [1, '#FFEFC7', 0]]), { class: 'cf-cone' });
 
     // entre le pilastre et la porte : la boutique, les paires réparées qui attendent avec leur ticket jaune
     {
@@ -887,11 +1474,12 @@
       path(bq, 'M226 270Q226 262 232 261.6Q238 262 238 270Z', '#E7C391');
       S('ellipse', { cx: 232, cy: 270.2, rx: 6, ry: 1.1, fill: '#FFF3D0' }, bq);
     }
+    await tranche();
 
     /* ---------- Clément : de trois-quarts dos, barbe, lunettes, t-shirt sombre, tablier de toile brune ----------
        Dessiné en centimètres (pieds à l'origine, y vers le haut négatif) puis posé à 1,2 m derrière la vitre.
-       Un pantin en 2D : le bras droit (le marteau) est orienté segment par segment. */
-    const clementG = G(atelier, { class: 'cf-clement' });
+       Un pantin en 2D : le bras droit (le marteau) est orienté segment par segment. Dans la toile. */
+    const clementG = G(vitR, { class: 'cf-clement' });
     const CL = { x: 157, y: 449, k: 0.83 }; // (le montant de la vitrine frôle son épaule gauche : il travaille juste derrière)
     const corps = G(clementG, { transform: `translate(${CL.x} ${CL.y}) scale(${CL.k})` });
     const buste = G(corps, { class: 'cf-buste' });
@@ -983,12 +1571,14 @@
       const k = 1 - 0.3 * Math.sin(Math.PI * u);
       teteTour.setAttribute('transform', u > 0 && u < 1 ? `translate(1.5 0) scale(${k.toFixed(3)} 1) translate(-1.5 0)` : '');
     };
+    await tranche();
 
     /* ---------- la boutique, vue par la porte (toujours un peu éclairée) ---------- */
+    // (par l'ouverture, toute la boutique : le vantail, percé à sa vitre, la couvre là où il est)
     const clipPorte = U('cp'), clipImp = U('ci');
-    const clipPorteP = S('path', {}, S('clipPath', { id: clipPorte }, defs));
+    rect(S('clipPath', { id: clipPorte }, defs), 279, 270, 71, 204, null);
     rect(S('clipPath', { id: clipImp }, defs), IMPOSTE[0], IMPOSTE[1], IMPOSTE[2], IMPOSTE[3], null);
-    const dansPorte = G(dedans, { 'clip-path': `url(#${clipPorte})`, class: 'cf-dans-porte' });
+    const dansPorte = G(pDedans, { 'clip-path': `url(#${clipPorte})`, class: 'cf-dans-porte' });
     const dansImposte = G(dedans, { 'clip-path': `url(#${clipImp})`, class: 'cf-dans-imposte' });
     const boutiqueFond = (par) => {
       rect(par, 272, 244, 86, 236, '#6B4A33');
@@ -1033,33 +1623,44 @@
     };
     boutiqueFond(dansPorte);
     boutiqueFond(dansImposte);
-    const chant = path(dedans, '', 'none', { stroke: '#FFD98E', 'stroke-width': 1.3, 'stroke-linecap': 'round', opacity: 0.8 });
+    // le chant du vantail, éclairé par la boutique : sa propre petite couche (il respire sur le compositeur)
+    const chant = path(chantSvg, '', 'none', { stroke: '#FFD98E', 'stroke-width': 1.3, 'stroke-linecap': 'round' });
 
-    // les voiles « fermé » (l'intérieur tamisé) et « soir » (l'atelier brille plus fort)
-    const tamis = [atelier, dansPorte, dansImposte].map((g) => rect(g, 20, 240, 360, 240, '#0E0906', { opacity: 0, class: 'cf-tamis' }));
-    const nuitDedans = [atelier, dansPorte].map((g) => S('ellipse', { cx: g === atelier ? 150 : 314, cy: 322, rx: g === atelier ? 170 : 80, ry: 120, fill: rad([[0, '#FFC47A', 0.34], [0.6, '#FFB266', 0.16], [1, '#FFB266', 0]]), opacity: 0 }, g));
+    // les voiles « fermé » (l'intérieur tamisé) et « soir » (l'atelier brille plus fort) ; ceux de l'atelier sont
+    // dans la couche de l'avant (au-dessus de la toile de la vitrine), avec la même découpe aux vitres
+    const avAtelier = G(avDedans, { 'clip-path': `url(#${clipAtelier})`, class: 'cf-atelier' });
+    const tamis = [avAtelier, dansPorte, dansImposte].map((g) => rect(g, 20, 240, 360, 240, '#0E0906', { opacity: 0, class: 'cf-tamis' }));
+    const nuitDedans = [avAtelier, dansPorte].map((g) => S('ellipse', { cx: g === avAtelier ? 150 : 314, cy: 322, rx: g === avAtelier ? 170 : 80, ry: 120, fill: rad([[0, '#FFC47A', 0.34], [0.6, '#FFB266', 0.16], [1, '#FFB266', 0]]), opacity: 0 }, g));
 
     /* ======================================================================
        Les vinyles collés aux vitres
        ====================================================================== */
-    // le logo CORDO63 sur l'imposte, en traits dorés (il s'allume quand le reflet passe)
+    // le logo CORDO63 sur l'imposte, en traits dorés (il s'allume quand le reflet passe : la toile du reflet
+    // le repeint alors dans son dégradé, le temps du passage)
     const idLogo = U('lg');
     const logoOr = S('linearGradient', { id: idLogo, gradientUnits: 'userSpaceOnUse', x1: -400, y1: 0, x2: -380, y2: 0 }, defs);
-    [[0, '#E6CB8E'], [0.35, '#FFF3CF'], [0.5, '#FFFFFF'], [0.65, '#FFF3CF'], [1, '#E6CB8E']].forEach(([o, c]) => S('stop', { offset: o, 'stop-color': c }, logoOr));
+    const STOPS_LOGO = [[0, '#E6CB8E'], [0.35, '#FFF3CF'], [0.5, '#FFFFFF'], [0.65, '#FFF3CF'], [1, '#E6CB8E']];
+    STOPS_LOGO.forEach(([o, c]) => S('stop', { offset: o, 'stop-color': c }, logoOr));
+    const logoX = [0, 0];
+    let logoP, logoD;
     {
       const lg = G(vinyles, { class: 'cf-logo', 'clip-path': `url(#${clipImp})` });
       const hL = 6.6, kLg = hL / 100, esp = 3.6, txt = 'CORDO63';
       const larg = [...txt].reduce((s, ch) => s + LOGO[ch].w, 0) * kLg + esp * (txt.length - 1);
       let x = IMPOSTE[0] + (IMPOSTE[2] - larg) / 2;
-      const d = [...txt].map((ch) => { const s = LOGO[ch].d(plume(x, 255.2, kLg)); x += LOGO[ch].w * kLg + esp; return s; }).join('');
-      path(lg, d, 'none', { stroke: `url(#${idLogo})`, 'stroke-width': 0.95, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+      logoX[0] = x; logoX[1] = x + larg;
+      logoD = [...txt].map((ch) => { const s = LOGO[ch].d(plume(x, 255.2, kLg)); x += LOGO[ch].w * kLg + esp; return s; }).join('');
+      logoP = path(lg, logoD, 'none', { stroke: `url(#${idLogo})`, 'stroke-width': 0.95, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
     }
-    // sur la vitre du vantail : la pancarte OUVERT / FERMÉ (elle suit la porte) et le vinyle des horaires
+    // sur la vitre du vantail : la pancarte OUVERT / FERMÉ (elle suit la porte, et se balance : sa propre couche)
+    // et le vinyle des horaires
     const clipVitreP = U('cv');
     const vitreClipP = S('path', {}, S('clipPath', { id: clipVitreP }, defs));
-    const surVitre = G(G(vinyles, { 'clip-path': `url(#${clipVitreP})` }), { class: 'cf-sur-vitre' });
+    const surVitre = G(G(pVinyles, { 'clip-path': `url(#${clipVitreP})` }), { class: 'cf-sur-vitre' });
     LT.push([surVitre, 314.5, 330]);
-    const pancarte = G(surVitre, { class: 'cf-pancarte' });
+    const surVitreP = G(G(pVinylesP, { 'clip-path': `url(#${clipVitreP})` }), { class: 'cf-sur-vitre' });
+    LT.push([surVitreP, 314.5, 330]);
+    const pancarte = G(surVitreP, { class: 'cf-pancarte' });
     S('circle', { cx: 314.5, cy: 288, r: 1.4, fill: '#D8D2C4' }, pancarte);
     path(pancarte, 'M302.5 297L314.5 289L326.5 297', 'none', { stroke: '#D9C9A8', 'stroke-width': 0.6 });
     rect(pancarte, 298.5, 297, 32, 12.5, '#F4ECDC', { rx: 1.6, stroke: P.vertOmbre, 'stroke-width': 0.8 });
@@ -1067,8 +1668,9 @@
     const horV = G(surVitre, { class: 'cf-horaires-vinyle', fill: '#F7F4EC', 'text-anchor': 'middle' });
     const idHor = U('hg');
     const horOr = S('linearGradient', { id: idHor, gradientUnits: 'userSpaceOnUse', x1: -400, y1: 0, x2: -380, y2: 0 }, defs);
-    [[0, '#F7F4EC'], [0.35, '#FFF1C4'], [0.5, '#FFD978'], [0.65, '#FFF1C4'], [1, '#F7F4EC']].forEach(([o, c]) => S('stop', { offset: o, 'stop-color': c }, horOr));
-    texte(horV, 'HORAIRES', 314.5, 358, 4.6, FONTE.large + ';font-weight:700', { 'letter-spacing': 0.8, fill: `url(#${idHor})` });
+    const STOPS_HOR = [[0, '#F7F4EC'], [0.35, '#FFF1C4'], [0.5, '#FFD978'], [0.65, '#FFF1C4'], [1, '#F7F4EC']];
+    STOPS_HOR.forEach(([o, c]) => S('stop', { offset: o, 'stop-color': c }, horOr));
+    const horairesT = texte(horV, 'HORAIRES', 314.5, 358, 4.6, FONTE.large + ';font-weight:700', { 'letter-spacing': 0.8, fill: `url(#${idHor})` });
     rect(horV, 304.5, 360.4, 20, 0.35, '#F7F4EC');
     texte(horV, 'MARDI → SAMEDI', 314.5, 366.4, 3.4, FONTE.sans + ';font-weight:700', { 'letter-spacing': 0.15 });
     texte(horV, '10h – 13h30', 314.5, 373, 4.4, FONTE.chiffres + ';font-weight:700');
@@ -1080,17 +1682,17 @@
     S('circle', { cx: 324.3, cy: 390.5, r: 1.3, fill: '#E9B04A', opacity: 0.85 }, surVitre);
 
     /* ======================================================================
-       Les reflets (toujours découpés aux vitres)
+       Les reflets (toujours découpés aux vitres) : la teinte, dans la couche de l'avant (et celle de la
+       vitre du vantail, dans la couche de la porte) ; le reflet qui passe, sur sa toile
        ====================================================================== */
     const clipVerres = U('cg');
     const clg = S('clipPath', { id: clipVerres }, defs);
     PANES.concat([IMPOSTE]).forEach(([x, y, w, h]) => rect(clg, x, y, w, h, null));
-    const verreVantailP = S('path', {}, clg);
-    const refletsG = G(reflets, { 'clip-path': `url(#${clipVerres})` });
+    const refletsG = G(avReflets, { 'clip-path': `url(#${clipVerres})` });
     const teinte = G(refletsG, { class: 'cf-teinte' });
     rect(teinte, 20, 248, 260, 150, lin([[0, '#DCE6EA', 0.3], [0.3, '#DCE6EA', 0.08], [1, '#DCE6EA', 0.03]]));
     rect(teinte, 275, 248, 79, 20, lin([[0, '#DCE6EA', 0.3], [1, '#DCE6EA', 0.12]]));
-    const teinteVantail = path(teinte, '', lin([[0, '#DCE6EA', 0.26], [0.4, '#DCE6EA', 0.06], [1, '#DCE6EA', 0.03]]));
+    const teinteVantail = path(pReflets, '', lin([[0, '#DCE6EA', 0.26], [0.4, '#DCE6EA', 0.06], [1, '#DCE6EA', 0.03]]));
     {
       const st = [];
       PANES.forEach(([x, y, w, h]) => {
@@ -1100,11 +1702,7 @@
       path(teinte, st.join(''), '#FFFFFF', { opacity: 0.05 });
       path(teinte, 'M20 394V372Q60 366 110 370T210 368T290 371V394Z', '#EDE6D6', { opacity: 0.06 });
     }
-    // le reflet qui passe (il allume au passage le logo de l'imposte et le mot HORAIRES)
-    const sheen = G(refletsG, { class: 'cf-sheen' });
-    const bande = G(sheen, { transform: 'translate(-60 0)', opacity: 0 });
-    rect(bande, 60, 240, 20, 170, '#FFFFFF', { opacity: 0.2, transform: 'skewX(-18)' });
-    rect(bande, 84, 240, 6, 170, '#FFFFFF', { opacity: 0.12, transform: 'skewX(-18)' });
+    await tranche();
 
     /* ======================================================================
        La vie : la lumière de la porte, sur le trottoir et en halo ; les lueurs du soir
@@ -1113,22 +1711,33 @@
     // de leur dégradé radial (ancré au milieu du bord haut, demi-largeur, pleine hauteur) : aucun bord dur
     const nappe = (stops) => rad(stops, { cx: 0.5, cy: 0, fx: 0.5, fy: 0, r: 1, gradientTransform: 'translate(.5 0) scale(.5 1) translate(-.5 0)' });
     const demiEll = (cx, y, rx, ry) => `M${f(cx - rx)} ${y}A${f(rx)} ${f(ry)} 0 0 0 ${f(cx + rx)} ${y}Z`;
-    const flaque = G(vie, { style: 'mix-blend-mode:screen' });
+    const flaque = G(flaqueSvg, { class: 'cf-flaque' }); // (la couche est en « screen » sur ce qui est dessous)
     const flaqueP = path(flaque, '', nappe([[0, '#FFE0A8', 1], [0.3, '#FFCF86', 0.72], [0.65, '#FFC878', 0.3], [1, '#FFC878', 0]]));
     const vitrinesSol = G(lueurs, { style: 'mix-blend-mode:screen' }); // le soir, les vitrines éclairent le trottoir
     const nappeV = nappe([[0, '#FFCF8A', 0.62], [0.45, '#FFCF8A', 0.3], [1, '#FFCF8A', 0]]);
     [[104, 124, 52], [241, 56, 44]].forEach(([cx, rx, ry]) => path(vitrinesSol, demiEll(cx, 478, rx, ry), nappeV));
-    const halo = G(vie, { class: 'cf-halo', style: 'mix-blend-mode:screen' });
-    const haloE = S('ellipse', { cx: 288, cy: 372, rx: 30, ry: 130, fill: rad([[0, '#FFDCA4', 0.75], [0.5, '#FFC47A', 0.28], [1, '#FFC47A', 0]]) }, halo);
-    const moutes = G(halo, { class: 'cf-moutes' });
+    // le halo de la porte : un calque HTML en « screen » (son opacité suit la porte) ; l'ellipse respire, et des
+    // poussières flottent dedans, sur le compositeur
+    const haloSvg = CO.svg('svg', { class: 'cf-halo-e', 'aria-hidden': 'true', focusable: 'false', preserveAspectRatio: 'none' });
+    haloSvg.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none;transform-origin:0 0';
+    haloDiv.appendChild(haloSvg);
+    const haloE = S('ellipse', { cx: 288, cy: 372, rx: 30, ry: 130, fill: rad([[0, '#FFDCA4', 0.75], [0.5, '#FFC47A', 0.28], [1, '#FFC47A', 0]]) }, haloSvg);
+    const moutes = document.createElement('div');
+    moutes.className = 'cf-moutes';
+    moutes.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;transform-origin:0 0;pointer-events:none';
+    haloDiv.appendChild(moutes);
     const moutesEls = [];
     for (let k = 0; k < 3; k++) {
       const dansFente = k % 2 === 0;
-      moutesEls.push(S('circle', { cx: f(dansFente ? 281 + R() * 14 : 250 + R() * 70), cy: f(dansFente ? 380 + R() * 70 : 478 + R() * 36), r: f(0.5 + R() * 0.6), fill: '#FFF2CC', opacity: 0 }, moutes));
+      const cx = +f(dansFente ? 281 + R() * 14 : 250 + R() * 70), cy = +f(dansFente ? 380 + R() * 70 : 478 + R() * 36), r = +f(0.5 + R() * 0.6);
+      const m = document.createElement('i');
+      m.style.cssText = `position:absolute;left:${f(cx - r - BOITES.halo.x)}px;top:${f(cy - r - BOITES.halo.y)}px;width:${f(2 * r)}px;height:${f(2 * r)}px;border-radius:50%;background:#FFF2CC;opacity:0`;
+      moutes.appendChild(m);
+      moutesEls.push(m);
     }
     // l'entrée : quand la porte s'ouvre en grand pour qu'on entre, la lumière de la boutique déborde, loin sur le
-    // trottoir, dans l'embrasure et sur le dormant (éteinte le reste du temps)
-    const entreeLum = G(vie, { class: 'cf-entree-lumiere', opacity: 0, style: 'mix-blend-mode:screen' });
+    // trottoir, dans l'embrasure et sur le dormant (éteinte le reste du temps : sa couche est cachée)
+    const entreeLum = G(entreeSvg, { class: 'cf-entree-lumiere' });
     path(entreeLum, demiEll(314.5, 477.5, 120, 98), nappe([[0, '#FFE6B6', 1], [0.35, '#FFD394', 0.62], [0.7, '#FFC878', 0.22], [1, '#FFC878', 0]]));
     S('ellipse', { cx: 314.5, cy: 370, rx: 64, ry: 136, fill: rad([[0, '#FFE4B2', 0.6], [0.55, '#FFCB84', 0.3], [1, '#FFCB84', 0]]) }, entreeLum);
     rect(entreeLum, 275, 266, 4, 208, lin([[0, '#FFD28A', 0.1], [0.45, '#FFD28A', 0.65], [1, '#FFD28A', 0.3]]));
@@ -1136,12 +1745,20 @@
     rect(entreeLum, 273, 472.4, 83, 6.2, lin([[0, '#FFE8BC', 0.85], [1, '#FFE8BC', 0.2]]));
     // la lanterne, le soir : sa lueur, et le mur qu'elle éclaire
     const lueurLant = G(lueurs, { style: 'mix-blend-mode:screen' });
-    S('ellipse', { cx: 405, cy: 228, rx: 80, ry: 92, fill: rad([[0, '#FFE2A0', 0.5], [0.35, '#FFD48A', 0.16], [1, '#FFD48A', 0]]) }, lueurLant);
+    const LUEUR_LANT = rad([[0, '#FFE2A0', 0.5], [0.35, '#FFD48A', 0.16], [1, '#FFD48A', 0]]);
+    S('ellipse', { cx: 405, cy: 228, rx: 80, ry: 92, fill: LUEUR_LANT }, lueurLant);
     S('ellipse', { cx: 405, cy: 225, rx: 13, ry: 15, fill: rad([[0, '#FFF6D8', 0.95], [1, '#FFE6A8', 0]]) }, lueurLant);
     // à l'étage, quelqu'un est rentré : la fenêtre au balconnet s'allume derrière son voilage
     rect(lueurLant, 322, -22, 52, 148, lin([[0, '#FFD89A', 0.16], [0.6, '#FFCB80', 0.3], [1, '#FFC070', 0.4]]));
     // et le bandeau, que la lanterne et la boutique réchauffent un peu
     S('ellipse', { cx: 290, cy: 206, rx: 120, ry: 48, fill: rad([[0, '#FFD08A', 0.2], [1, '#FFD08A', 0]]) }, lueurLant);
+    // ce qui couvre le vantail dans la rue, recopié sur lui dans la couche de la porte (découpé à son contour, moins
+    // la vitre) : la lumière du jour, le voile du soir, la lueur de la lanterne
+    pSur.setAttribute('clip-path', `url(#${clipVantail})`);
+    rect(pSur, 268, 242, 94, 238, JOUR);
+    const voileP = rect(pSur, 268, 242, 94, 238, VOILE_D, { opacity: 0 });
+    const lueursP = G(pSur, { opacity: 0 });
+    S('ellipse', { cx: 405, cy: 228, rx: 80, ry: 92, fill: LUEUR_LANT }, G(lueursP, { style: 'mix-blend-mode:screen' }));
 
     /* ======================================================================
        Devant : le poteau du sens interdit, au coin ; l'ardoise « Déposez vos paires ! »
@@ -1177,7 +1794,7 @@
 
     /* ======================================================================
        La chaleur : quand on passe le seuil, la lumière de la boutique monte et se réchauffe. Un calque HTML
-       posé sur l'hôte, au-dessus du SVG (son fondu ne coûte rien : le compositeur s'en charge) ; au bout de
+       posé sur l'hôte, au-dessus de la pile (son fondu ne coûte rien : le compositeur s'en charge) ; au bout de
        l'entrée, l'embrasure est au centre de l'écran, et la lumière avec elle.
        ====================================================================== */
     const chaleur = document.createElement('div');
@@ -1187,16 +1804,29 @@
       'background:radial-gradient(ellipse 72% 62% at 50% 52%, rgba(255,246,226,.97) 0%, rgba(255,228,176,.9) 34%, rgba(255,203,132,.72) 70%, rgba(233,164,96,.55) 100%)';
 
     /* ======================================================================
-       Les zones à toucher (transparentes) : une seule pour la boutique (vitrine, porte, Clément)
+       Les zones à toucher (transparentes, en HTML, au-dessus de tout) : une seule pour la boutique (vitrine,
+       porte, Clément) ; au clavier, une couture pointillée les entoure
        ====================================================================== */
+    const touches = document.createElement('div');
+    touches.className = 'cf-touches';
+    touches.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';
     const ecoutes = new Map();
     const emettre = (nom, ...a) => (ecoutes.get(nom) || []).slice().forEach((fn) => { try { fn(...a); } catch (e) { console.warn('facade', nom, e); } });
+    const zonesB = []; // [élément, boîte]
     const zone = (id, x, y, w, h, label) => {
-      const el = rect(touches, x, y, w, h, '#fff', { 'fill-opacity': 0, class: 'cf-hit cf-hit-' + id, role: 'button', tabindex: 0, 'aria-label': label, rx: 2, 'data-cible': id });
+      const el = document.createElement('div');
+      el.className = 'cf-hit cf-hit-' + id;
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('aria-label', label);
+      el.dataset.cible = id;
+      el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect width="${w}" height="${h}" rx="2" fill="#FFE9B0" fill-opacity=".12" stroke="#F4C75E" stroke-width="1.8" stroke-dasharray="5 3"/></svg>`;
       el.addEventListener('keydown', (e) => { // au clavier, Entrée et Espace valent un clic
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
       });
       el.addEventListener('click', (e) => emettre('cible', id, e));
+      touches.appendChild(el);
+      zonesB.push([el, { x, y, w, h }]);
       return el;
     };
     const cibles = {
@@ -1205,42 +1835,118 @@
       enseigne: zone('enseigne', ENS.x, ENS.y, ENS.w, ENS.h, "L'enseigne : une Air Jordan 1 sculptée dans le bois"),
       chevalet: opts.ardoise ? zone('chevalet', 30, 424, 72, 136, 'L’ardoise : déposez vos paires') : null,
     };
+    await tranche();
 
     /* ======================================================================
        La porte : projection, lumière, clip de la boutique
        ====================================================================== */
     let lumK = 1; // intensité de la lumière qui sort (plus forte le soir, plus faible fermé)
+    let verreQ = ''; // la vitre du vantail, projetée (la toile du reflet s'y découpe)
+    /** La lumière qui sort de la porte, à l'angle th : la flaque (centre, demi-axes, opacité), le halo (centre, demi-axe,
+        opacité) ; L : la part de lumière qui sort (0 fermée, 1 grande ouverte) */
+    function lumiereA(th) {
+      const L = Math.sin(th) / Math.sin(GRAND), bx = projA(th, VA.x, VA.y + VA.h)[0], ouv = th > 0.02;
+      return {
+        ouv, fcx: (279 + bx) / 2 - 4, frx: 44 + (bx - 279) * 1.3, fry: 60 + 26 * L, fop: Math.min(1, lumK * (0.25 + 0.75 * L) * (ouv ? 1 : 0)),
+        hcx: (279 + bx) / 2, hrx: 16 + (bx - 279) * 1.1, hop: Math.min(1, lumK * Math.min(1, L * 1.4)),
+      };
+    }
     function poser() {
       LP.forEach(([el, fn]) => el.setAttribute('d', fn()));
       LT.forEach(([el, cx, cy]) => el.setAttribute('transform', affine(cx, cy)));
-      const s = Math.sin(theta), L = s / Math.sin(GRAND); // la part de lumière qui sort : 0 fermée, 1 grande ouverte
-      ombreVantail.setAttribute('opacity', (0.04 + 0.3 * s).toFixed(3));
+      const lu = lumiereA(theta);
+      ombreVantail.setAttribute('opacity', (0.04 + 0.3 * Math.sin(theta)).toFixed(3));
       const th = proj(VA.x, VA.y), bh = proj(VA.x, VA.y + VA.h);
-      const verreQ = quadD(VA.vx, VA.vy, VA.vw, VA.vh);
-      clipPorteP.setAttribute('d', `M279 270H350L${f(th[0])} ${f(th[1])}L${f(bh[0])} ${f(bh[1])}L350 474H279Z` + verreQ);
+      verreQ = quadD(VA.vx, VA.vy, VA.vw, VA.vh);
+      clipVantailP.setAttribute('d', quadD(VA.x, VA.y, VA.w, VA.h) + verreQ);
       vitreClipP.setAttribute('d', verreQ);
-      verreVantailP.setAttribute('d', verreQ);
       teinteVantail.setAttribute('d', verreQ);
-      const ouv = theta > 0.02;
-      chant.setAttribute('d', ouv ? `M${f(th[0])} ${f(th[1] + 1)}L${f(bh[0])} ${f(bh[1] - 1)}` : '');
-      const bx = bh[0];
-      flaqueP.setAttribute('d', ouv ? demiEll((279 + bx) / 2 - 4, 477.5, 44 + (bx - 279) * 1.3, 60 + 26 * L) : '');
-      flaque.setAttribute('opacity', Math.min(1, lumK * (0.25 + 0.75 * L) * (ouv ? 1 : 0)).toFixed(3));
-      haloE.setAttribute('cx', f((279 + bx) / 2));
-      haloE.setAttribute('rx', f(16 + (bx - 279) * 1.1));
-      halo.setAttribute('opacity', Math.min(1, lumK * Math.min(1, L * 1.4)).toFixed(3));
+      chant.setAttribute('d', lu.ouv ? `M${f(th[0])} ${f(th[1] + 1)}L${f(bh[0])} ${f(bh[1] - 1)}` : '');
+      flaqueP.setAttribute('d', lu.ouv ? demiEll(lu.fcx, 477.5, lu.frx, lu.fry) : '');
+      flaqueSvg.style.opacity = lu.fop.toFixed(3);
+      haloE.setAttribute('cx', f(lu.hcx));
+      haloE.setAttribute('rx', f(lu.hrx));
+      haloDiv.style.opacity = lu.hop.toFixed(3);
     }
     let tourPorte = 0;
-    async function pivoter(th, ms, ease = CO.ease.inOutSine, lent = false) {
+    async function pivoter(th, ms, ease = CO.ease.inOutSine) {
+      arreterCourant();
       const id = ++tourPorte, th0 = theta;
       if (CO.reduced || ms <= 0) { theta = th; poser(); return; }
-      await (lent ? geste : CO.tween)(ms, (e) => { if (id === tourPorte) { theta = th0 + (th - th0) * e; poser(); } }, ease);
+      await CO.tween(ms, (e) => { if (id === tourPorte) { theta = th0 + (th - th0) * e; poser(); } }, ease);
     }
+    const angleBalance = (amp, e) => amp * Math.exp(-3.2 * e) * Math.sin(e * 15);
     function balancerPancarte(amp) { // la pancarte se balance sur sa cordelette, autour de sa ventouse
       if (CO.reduced) return;
-      CO.tween(1500, (e) => pancarte.setAttribute('transform', `rotate(${f(amp * Math.exp(-3.2 * e) * Math.sin(e * 15))} 314.5 288)`));
+      CO.tween(1500, (e) => pancarte.setAttribute('transform', `rotate(${f(angleBalance(amp, e))} 314.5 288)`));
     }
-    poser();
+
+    /* ---------- le courant d'air : la porte bat un peu, puis revient, tout entier sur le compositeur ----------
+       À ces petits angles, passer d'un angle à l'autre déforme le vantail presque exactement comme une
+       transformation affine (à un dixième d'unité près) : ses couches (le vantail, la teinte de sa vitre, son
+       chant) la suivent, la pancarte aussi, avec son balancement ; la flaque et le halo s'étirent d'autant.
+       Des images clés calculées une fois, que le compositeur joue : rien n'est repeint, et à la fin tout
+       retombe exactement sur l'image de départ. */
+    let courant = null;
+    const GRILLE = [];
+    [279, 314.5, 350].forEach((x) => [270, 372, 474].forEach((y) => GRILLE.push([x, y])));
+    function resout3(M, v) { // (Cramer)
+      const det = (m) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+      const D = det(M);
+      return [0, 1, 2].map((k) => det(M.map((ligne, i) => ligne.map((x, j) => (j === k ? v[i] : x)))) / D);
+    }
+    /** La transformation affine (moindres carrés sur le vantail) qui mène sa projection à th0 vers celle à th1 */
+    function affineEntre(th0, th1) {
+      const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bx = [0, 0, 0], by = [0, 0, 0];
+      GRILLE.forEach(([x, y]) => {
+        const p = projA(th0, x, y), q = projA(th1, x, y), v = [p[0] - 314.5, p[1] - 372, 1]; // (centré : mieux conditionné)
+        for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) M[i][j] += v[i] * v[j]; bx[i] += v[i] * q[0]; by[i] += v[i] * q[1]; }
+      });
+      const a = resout3(M, bx), b = resout3(M, by);
+      return [a[0], b[0], a[1], b[1], a[2] - a[0] * 314.5 - a[1] * 372, b[2] - b[0] * 314.5 - b[1] * 372];
+    }
+    const inverse = ([a, b, c, d, e, g]) => { const k = a * d - b * c; return [d / k, -b / k, -c / k, a / k, (c * g - d * e) / k, (b * e - a * g) / k]; };
+    const placeDe = new Map(); // élément → { left, top } (sa boîte dans l'hôte, posée par disposer())
+    /** Une transformation de la scène (en unités) → la transformation CSS de cet élément (px de l'hôte, origine 0 0) */
+    function cssHote(A, el) {
+      const b = placeDe.get(el) || { left: 0, top: 0 }, { s, ox, oy } = cadre;
+      const [a, bb, c, d, e, g] = A;
+      const tx = ox + a * (b.left - ox) + c * (b.top - oy) + s * e - b.left;
+      const ty = oy + bb * (b.left - ox) + d * (b.top - oy) + s * g - b.top;
+      return `matrix(${[a, bb, c, d, tx, ty].map((v) => Math.round(v * 1e5) / 1e5).join(', ')})`;
+    }
+    function arreterCourant() {
+      if (!courant) return;
+      const c = courant;
+      courant = null;
+      theta = c.angle(performance.now());
+      c.anims.forEach((a) => a.cancel());
+      pancarte.removeAttribute('transform');
+      poser();
+    }
+    function courantCompositeur(dth, ms1, ms2, amp) {
+      if (!cadre) return Promise.resolve();
+      const th0 = theta, D = ms1 + ms2, n = Math.ceil(D / 33), l0 = lumiereA(th0), LT0 = inverse(affineM(314.5, 330, th0));
+      const angle = (now) => { const t = now - t0; return t < ms1 ? th0 + dth * CO.ease.inOutSine(Math.max(0, t) / ms1) : t < D ? th0 + dth * (1 - CO.ease.inOutSine((t - ms1) / ms2)) : th0; };
+      const kV = [], kP = [], kH = [], kF = [], kO = [];
+      let t0 = 0;
+      for (let i = 0; i <= n; i++) {
+        const t = Math.min(D, (i * D) / n), off = t / D, th = angle(t), lu = lumiereA(th);
+        kV.push({ offset: off, transform: cssHote(affineEntre(th0, th), porteSvg) });
+        const R = lireTransform(`rotate(${t < 1500 ? angleBalance(amp, t / 1500) : 0} 314.5 288)`);
+        kP.push({ offset: off, transform: cssHote(mul(mul(affineM(314.5, 330, th), R), LT0), pancarteSvg) });
+        const kh = lu.hrx / l0.hrx, kx = lu.frx / l0.frx, ky = lu.fry / l0.fry;
+        kH.push({ offset: off, transform: cssHote([kh, 0, 0, 1, lu.hcx - kh * l0.hcx, 0], haloDiv) });
+        kF.push({ offset: off, transform: cssHote([kx, 0, 0, ky, lu.fcx - kx * l0.fcx, 477.5 - ky * 477.5], flaqueSvg), opacity: lu.fop });
+        kO.push({ offset: off, opacity: lu.hop });
+      }
+      const o = { duration: D, easing: 'linear' }, vit = (a) => CO.ambiance.anime(a, host);
+      const anims = [vit(porteSvg.animate(kV, o)), vit(teinteSvg.animate(kV, o)), vit(chantSvg.animate(kV, o)), vit(pancarteSvg.animate(kP, o)), vit(haloSvg.animate(kH, o)), vit(flaqueSvg.animate(kF, o))];
+      if (kO.some((k) => Math.abs(k.opacity - l0.hop) > 0.002)) anims.push(vit(haloDiv.animate(kO, o)));
+      t0 = performance.now();
+      const c = (courant = { anims, angle });
+      return Promise.all(anims.map((a) => a.finished.catch(() => null))).then(() => { if (courant === c) { courant = null; anims.forEach((a) => a.cancel()); } });
+    }
 
     /* ======================================================================
        Clément : le pantin
@@ -1267,17 +1973,20 @@
       manche.setAttribute('opacity', etat.marteau);
       teteMarteau.setAttribute('opacity', etat.marteau);
     }
-    /** Comme CO.tween, mais à ~30 images/s : Clément bouge presque sans cesse, deux fois moins de repeints
-        (la dernière image est toujours jouée) */
-    const geste = (ms, fn, ease = CO.ease.linear) => new Promise((resolve) => {
+    /** Comme CO.tween, mais à ~30 images/s (pas : ms entre deux images) : Clément bouge presque sans cesse (la
+        dernière image est toujours jouée). Entre deux images, un minuteur (pas d'image du navigateur pour rien).
+        Quand la devanture ne se voit pas, le geste se finit tout de suite. */
+    const geste = (ms, fn, ease = CO.ease.linear, pas = 31) => new Promise((resolve) => {
       const t0 = performance.now();
-      let prec = -1e9;
-      const pas = (now) => {
-        const p = Math.max(0, Math.min(1, (now - t0) / ms));
-        if (p >= 1 || now - prec >= 31) { prec = now; fn(ease(p), p); }
-        if (p < 1) requestAnimationFrame(pas); else resolve();
+      const etape = (now) => {
+        const p = !visible() ? 1 : Math.max(0, Math.min(1, (now - t0) / ms));
+        fn(ease(p), p);
+        if (p >= 1) { resolve(); return; }
+        const reste = Math.min(pas, t0 + ms - performance.now());
+        if (reste > 20) setTimeout(() => requestAnimationFrame(etape), reste - 12);
+        else requestAnimationFrame(etape);
       };
-      requestAnimationFrame(pas);
+      requestAnimationFrame(etape);
     });
     const lerpPose = (A, B, e) => ({ c: [CO.lerp(A.c[0], B.c[0], e), CO.lerp(A.c[1], B.c[1], e)], m: [CO.lerp(A.m[0], B.m[0], e), CO.lerp(A.m[1], B.m[1], e)], a: CO.lerp(A.a, B.a, e), l: CO.lerp(A.l, B.l, e) });
     const allerA = (chemin, ms, ease, apres) => geste(ms, (e) => { // suit une suite de poses (arc naturel)
@@ -1290,14 +1999,162 @@
     const poserCorps = (dx = 0, dy = 0) => corps.setAttribute('transform', `translate(${f(CL.x + dx * CL.k)} ${f(CL.y + dy * CL.k)}) scale(${CL.k})`);
 
     /* ======================================================================
+       La mise en place des couches : chacune dans sa boîte, calée sur les pixels de l'écran (le grand SVG
+       la cadre en xMidYMax meet : on fait le même calcul) ; les toiles à la résolution de l'écran (× le zoom
+       de la caméra, quand elle s'approche)
+       ====================================================================== */
+    const taille = { W: 0, H: 0 };
+    let cadre = null, zoomToile = 1;
+    const rf = { k: 1, x0: 0, y0: 0, base: MI, hors: null }; // la toile du reflet
+    function boiteCalee(b, dpr) {
+      const { s, ox, oy } = cadre;
+      const X0 = Math.floor((ox + b.x * s) * dpr + 1e-6), Y0 = Math.floor((oy + b.y * s) * dpr + 1e-6);
+      const X1 = Math.ceil((ox + (b.x + b.w) * s) * dpr - 1e-6), Y1 = Math.ceil((oy + (b.y + b.h) * s) * dpr - 1e-6);
+      return { left: X0 / dpr, top: Y0 / dpr, width: (X1 - X0) / dpr, height: (Y1 - Y0) / dpr, x: (X0 / dpr - ox) / s, y: (Y0 / dpr - oy) / s, w: (X1 - X0) / dpr / s, h: (Y1 - Y0) / dpr / s, W: X1 - X0, H: Y1 - Y0 };
+    }
+    let dispose = ''; // (la dernière mise en place : on ne réécrit rien si rien n'a changé)
+    function disposer(force) {
+      const W = taille.W || host.clientWidth, H = taille.H || host.clientHeight;
+      if (!W || !H) return;
+      const dpr = window.devicePixelRatio || 1, cle = `${W}|${H}|${dpr}|${zoomToile}`;
+      if (cle === dispose && !force) return;
+      dispose = cle;
+      const s = Math.min(W / 400, H / 560);
+      arreterCourant(); // (ses images clés valaient pour l'ancienne mise en place)
+      cadre = { s, ox: W / 2 - 200 * s, oy: H - 560 * s };
+      couches.forEach(([el, b, type]) => {
+        const c = boiteCalee(b, dpr);
+        placeDe.set(el, { left: c.left, top: c.top });
+        Object.assign(el.style, { left: c.left + 'px', top: c.top + 'px', width: c.width + 'px', height: c.height + 'px' });
+        if (type === 'svg') el.setAttribute('viewBox', `${c.x} ${c.y} ${c.w} ${c.h}`);
+        else if (el === cvVitrine) vitrine.poser(c.x, c.y, s * dpr * zoomToile, Math.round(c.W * zoomToile), Math.round(c.H * zoomToile));
+        else if (el === cvReflet) {
+          if (cvReflet.width !== c.W) cvReflet.width = c.W;
+          if (cvReflet.height !== c.H) cvReflet.height = c.H;
+          rf.k = s * dpr; rf.base = [rf.k, 0, 0, rf.k, -c.x * rf.k, -c.y * rf.k];
+          if (rf.hors) { rf.hors.width = c.W; rf.hors.height = c.H; }
+          if (refletEnCours) poserReflet(refletEnCours[0], refletEnCours[1]);
+        } else if (el === haloDiv) {
+          haloSvg.setAttribute('viewBox', `${c.x} ${c.y} ${c.w} ${c.h}`);
+          moutes.style.transform = `scale(${c.width / c.w}) translate(${f(BOITES.halo.x - c.x)}px, ${f(BOITES.halo.y - c.y)}px)`;
+        }
+      });
+      zonesB.forEach(([el, b]) => Object.assign(el.style, { left: cadre.ox + b.x * s + 'px', top: cadre.oy + b.y * s + 'px', width: b.w * s + 'px', height: b.h * s + 'px' }));
+    }
+    /** La caméra s'est approchée (ou éloignée) : la toile de la vitrine suit, plus fine (jusqu'à ×2,5) */
+    function zoomCamera(z) {
+      const zz = Math.max(1, Math.min(2.5, Math.round(z * 4) / 4));
+      if (zz === zoomToile || !cadre) return;
+      zoomToile = zz;
+      const b = couches.find((c) => c[0] === cvVitrine), dpr = window.devicePixelRatio || 1, c = boiteCalee(b[1], dpr);
+      vitrine.poser(c.x, c.y, cadre.s * dpr * zz, Math.round(c.W * zz), Math.round(c.H * zz));
+      dispose = `${taille.W || host.clientWidth}|${taille.H || host.clientHeight}|${dpr}|${zz}`;
+    }
+
+    /* ======================================================================
+       Le reflet qui passe : peint sur sa toile, découpé aux vitres (rien à repeindre dans les SVG). Au passage
+       sur le logo de l'imposte et sur le mot HORAIRES, ceux-ci sont repeints là, dans leur dégradé qui s'allume,
+       sous la teinte de la vitre ; leur version SVG s'efface le temps du passage (un repeint au début, un à la fin).
+       ====================================================================== */
+    const TAN18 = Math.tan((18 * Math.PI) / 180);
+    let refletEnCours = null, opRefl = 1, sansLogo = false, sansHor = false, glyphes = null, policeHor = '', horDemi = 16, logoPath = null;
+    const vitresP = () => { const p = new Path2D(); PANES.concat([IMPOSTE]).forEach(([x, y, w, h]) => p.rect(x, y, w, h)); if (verreQ) p.addPath(new Path2D(verreQ)); return p; };
+    const cacheEl = (el, oui, avant) => { if (oui !== avant) el.setAttribute('visibility', oui ? 'hidden' : 'visible'); return oui; };
+    function lireGlyphes() {
+      if (glyphes) return;
+      try {
+        const n = horairesT.getNumberOfChars(), cs = getComputedStyle(horairesT);
+        glyphes = [];
+        for (let i = 0; i < n; i++) { const p = horairesT.getStartPositionOfChar(i); glyphes.push([horairesT.textContent[i], p.x, p.y]); }
+        const fin = n ? horairesT.getEndPositionOfChar(n - 1).x : 314.5;
+        horDemi = Math.max(8, (fin - (glyphes[0] ? glyphes[0][1] : 314.5)) / 2);
+        policeHor = `${cs.fontStyle === 'italic' ? 'italic ' : ''}${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      } catch (e) { glyphes = []; }
+    }
+    function horsReflet() {
+      if (!rf.hors) { rf.hors = document.createElement('canvas'); rf.hors.width = cvReflet.width; rf.hors.height = cvReflet.height; }
+      const g = rf.hors.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      g.clearRect(0, 0, rf.hors.width, rf.hors.height);
+      return g;
+    }
+    const degradeX = (g, c, l, stops) => { const gr = g.createLinearGradient(c - l / 2, 0, c + l / 2, 0); stops.forEach(([o, col]) => gr.addColorStop(o, col)); return gr; };
+    const degradeY = (g, y0, y1, stops) => { const gr = g.createLinearGradient(0, y0, 0, y1); stops.forEach(([o, col, a]) => gr.addColorStop(o, rgba(col, a))); return gr; };
+    function poserReflet(tx, op) {
+      refletEnCours = op > 0 ? [tx, op] : null;
+      const cL = 70 + tx - 259 * TAN18, cH = 70 + tx - 358 * TAN18;
+      if (op > 0) lireGlyphes();
+      const voitL = op > 0 && cL + 12 > logoX[0] && cL - 12 < logoX[1];
+      const voitH = op > 0 && !!glyphes && glyphes.length > 0 && Math.abs(cH - 314.5) < 9 + horDemi;
+      sansLogo = cacheEl(logoP, voitL, sansLogo);
+      sansHor = cacheEl(horairesT, voitH, sansHor);
+      const g = cvReflet.getContext('2d'), B = rf.base;
+      g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      g.clearRect(0, 0, cvReflet.width, cvReflet.height);
+      if (!(op > 0) || !cvReflet.width) { cvReflet.style.visibility = 'hidden'; return; }
+      cvReflet.style.visibility = 'visible';
+      if (voitL) { // le logo dans son dégradé, la teinte de l'imposte par-dessus (seulement sur le trait)
+        const h = horsReflet();
+        h.setTransform(B[0], B[1], B[2], B[3], B[4], B[5]);
+        h.save();
+        h.beginPath(); h.rect(IMPOSTE[0], IMPOSTE[1], IMPOSTE[2], IMPOSTE[3]); h.clip();
+        if (!logoPath) logoPath = new Path2D(logoD);
+        h.lineWidth = 0.95; h.lineCap = 'round'; h.lineJoin = 'round';
+        h.strokeStyle = degradeX(h, cL, 22, STOPS_LOGO);
+        h.stroke(logoPath);
+        h.globalCompositeOperation = 'source-atop';
+        h.globalAlpha = opRefl;
+        h.fillStyle = degradeY(h, 248, 268, [[0, '#DCE6EA', 0.3], [1, '#DCE6EA', 0.12]]);
+        h.fillRect(275, 248, 79, 20);
+        h.restore();
+        g.drawImage(rf.hors, 0, 0);
+      }
+      if (voitH) { // HORAIRES, sur la vitre du vantail (son repère suit la porte), la teinte de la vitre par-dessus
+        const h = horsReflet(), Mv = lireTransform(surVitre.getAttribute('transform') || ''), V = new Path2D(verreQ), bb = bornesChemin(verreQ) || [0, 0, 1, 1];
+        h.setTransform(B[0], B[1], B[2], B[3], B[4], B[5]);
+        h.save();
+        h.clip(V);
+        const M = mul(B, Mv);
+        h.setTransform(M[0], M[1], M[2], M[3], M[4], M[5]);
+        h.font = policeHor; h.textAlign = 'left'; h.textBaseline = 'alphabetic';
+        h.fillStyle = degradeX(h, cH, 16, STOPS_HOR);
+        glyphes.forEach(([ch, x, y]) => h.fillText(ch, x, y));
+        h.setTransform(B[0], B[1], B[2], B[3], B[4], B[5]);
+        h.globalCompositeOperation = 'source-atop';
+        h.globalAlpha = opRefl;
+        h.fillStyle = degradeY(h, bb[1], bb[3], [[0, '#DCE6EA', 0.26], [0.4, '#DCE6EA', 0.06], [1, '#DCE6EA', 0.03]]);
+        h.fill(V);
+        h.restore();
+        g.drawImage(rf.hors, 0, 0);
+      }
+      // la bande de lumière, découpée aux vitres (deux traits penchés à 18°)
+      g.save();
+      g.setTransform(B[0], B[1], B[2], B[3], B[4], B[5]);
+      g.clip(vitresP());
+      const M = mul(mul(B, [1, 0, 0, 1, tx, 0]), [1, 0, Math.tan(-18 * RAD), 1, 0, 0]);
+      g.setTransform(M[0], M[1], M[2], M[3], M[4], M[5]);
+      g.fillStyle = '#FFFFFF';
+      g.globalAlpha = 0.2 * op * opRefl; g.fillRect(60, 240, 20, 170);
+      g.globalAlpha = 0.12 * op * opRefl; g.fillRect(84, 240, 6, 170);
+      g.restore();
+      g.globalAlpha = 1;
+    }
+
+    /* ======================================================================
        API
        ====================================================================== */
-    host.appendChild(svg);
+    host.appendChild(pile);
+    pile.append(devantSvg, cvVitrine, avantSvg, porteFondSvg, porteSvg, pancarteSvg, teinteSvg, chantSvg, cvReflet, flaqueSvg, haloDiv, entreeSvg, touches);
     host.appendChild(chaleur);
     let nuit = false, ouvert = true, frappeTour = 0, vivant = false, toque = false, entre = false;
-    let camCadre = null, camAnim = null, yawEns = 0;
+    let camCadre = null, camAnim = null, camM = [1, 0, 0, 1, 0, 0], yawEns = 0;
     const visible = () => CO.ambiance.visible(host);
     const son = (nom, o) => { if (visible()) CO.sfx.play(nom, o); };
+    // la toile de la vitrine ne se peint que quand la devanture se voit ; elle se réveille avec elle
+    vitrine.visible = visible;
+    if (CO.ambiance.quand) CO.ambiance.quand(host, (v) => { if (v) vitrine.reveil(); });
+    // (la mise en place attend la première mesure de l'hôte, juste avant la première image : sans observateur, tout de suite)
+    if (!window.ResizeObserver) disposer();
 
     function ombre(yaw = yawEns) {
       yawEns = yaw;
@@ -1310,15 +2167,21 @@
     }
     ombre(0);
 
+    // les groupes jumeaux (même calque logique, dans plusieurs couches) : leurs fondus vont ensemble
+    const refletsT = [avReflets, pReflets];
+    const regler = (els, op, ms = 0, delai = 0, ease = 'ease') => [].concat(els).forEach((el) => {
+      el.style.transition = ms > 0 ? `opacity ${Math.round(ms)}ms ${ease} ${Math.round(delai)}ms` : 'none';
+      el.style.opacity = String(op);
+    });
     function appliquer(ms = 1200) {
       const tr = `opacity ${ms}ms ease`;
-      [voile, lueurs, ombreEns].forEach((el) => { el.style.transition = tr; });
-      voile.style.opacity = nuit ? '0.58' : '0';
-      lueurs.style.opacity = nuit ? '1' : '0';
+      [voile, voileP, lueurs, lueursP, ombreEns].forEach((el) => { el.style.transition = tr; });
+      [voile, voileP].forEach((el) => { el.style.opacity = nuit ? '0.58' : '0'; });
+      [lueurs, lueursP].forEach((el) => { el.style.opacity = nuit ? '1' : '0'; });
       ombreEns.style.opacity = nuit ? '0.34' : '0.58';
       flamme.setAttribute('opacity', nuit ? 1 : 0);
       vitreLant.setAttribute('fill', nuit ? '#FFE9B8' : '#B9BDB9');
-      if (!entre) { reflets.style.transition = tr; reflets.style.opacity = nuit ? '0.4' : '1'; }
+      if (!entre) { refletsT.forEach((el) => { el.style.transition = tr; el.style.opacity = nuit ? '0.4' : '1'; }); opRefl = nuit ? 0.4 : 1; }
       nuitDedans.forEach((el) => { el.style.transition = tr; el.style.opacity = nuit && ouvert ? '1' : '0'; });
       tamis.forEach((el, i) => { el.style.transition = tr; el.style.opacity = ouvert || (entre && i > 0) ? '0' : i === 0 ? '0.62' : '0.45'; });
       [lampes, cone].forEach((el) => { el.style.transition = tr; el.style.opacity = ouvert ? '1' : '0.15'; });
@@ -1361,14 +2224,14 @@
       });
       hocher(0);
     }
-    function poncer() { // des poussières dorées s'envolent de la brosse (en boucle, le temps du ponçage)
+    function poncer() { // des poussières dorées s'envolent de la brosse (en boucle, le temps du ponçage ; 12 images/s)
       return grains.map((g, i) => {
         const dx = -4 - Math.random() * 14, dy = -6 + Math.random() * 12;
-        return CO.ambiance.anime(g.animate([
+        return g.animate([
           { transform: 'translate(0px, 0px)', opacity: 0.95 },
           { transform: `translate(${f(dx * 0.6)}px, ${f(dy * 0.6 - 3)}px)`, opacity: 0.8, offset: 0.5 },
           { transform: `translate(${f(dx)}px, ${f(dy + 5)}px)`, opacity: 0 },
-        ], { duration: 520 + Math.random() * 380, delay: i * 60, iterations: Infinity, easing: 'ease-out' }), host);
+        ], { duration: 520 + Math.random() * 380, delay: i * 60, iterations: Infinity, easing: 'ease-out', ips: 12 });
       });
     }
     async function aLaFinisseuse() {
@@ -1389,7 +2252,7 @@
       aLaBrosse.style.opacity = '1';
       const duree = 1800 + Math.random() * 1200;
       son('grind', { dur: duree / 1000, gain: 0.55 });
-      const bouge = CO.ambiance.anime(chaussureBrosse.animate([{ transform: 'translate(0px, 0px) rotate(0deg)' }, { transform: 'translate(0.8px, -1.4px) rotate(-6deg)' }, { transform: 'translate(-0.4px, 1px) rotate(4deg)' }, { transform: 'translate(0px, 0px) rotate(0deg)' }], { duration: 900, iterations: Infinity, easing: 'ease-in-out' }), host);
+      const bouge = chaussureBrosse.animate([{ transform: 'translate(0px, 0px) rotate(0deg)' }, { transform: 'translate(0.8px, -1.4px) rotate(-6deg)' }, { transform: 'translate(-0.4px, 1px) rotate(4deg)' }, { transform: 'translate(0px, 0px) rotate(0deg)' }], { duration: 900, iterations: Infinity, easing: 'ease-in-out', ips: 24 });
       const poussiere = poncer();
       await CO.wait(duree);
       bouge.cancel();
@@ -1408,7 +2271,7 @@
     function tourner(on) {
       if (defileAnim) { defileAnim.cancel(); defileAnim = null; }
       if (!on || CO.reduced || !vivant) return;
-      defileAnim = CO.ambiance.anime(defile.animate([{ transform: 'translateY(0px)' }, { transform: 'translateY(2.6px)' }], { duration: 375, iterations: Infinity, easing: 'steps(3, jump-end)' }), host);
+      defileAnim = defile.animate([{ transform: 'translateY(0px)' }, { transform: 'translateY(2.6px)' }], { duration: 375, iterations: Infinity, easing: 'steps(3, jump-end)', ips: 8 });
     }
     async function vieClement(tour) {
       await CO.wait(700);
@@ -1433,16 +2296,6 @@
 
     // le reflet passe de temps en temps (≈ toutes les 15 s, quand la devanture se voit) ; il allume au passage
     // le mot HORAIRES de la porte et le logo de l'imposte. Piloté ici le temps du passage : rien entre deux.
-    const TAN18 = Math.tan((18 * Math.PI) / 180);
-    function poserReflet(tx, op) {
-      bande.setAttribute('transform', `translate(${f(tx)} 0)`);
-      bande.setAttribute('opacity', op.toFixed(3));
-      [[horOr, 358, 16], [logoOr, 259, 22]].forEach(([g, y, l]) => { // le centre de la bande à la hauteur y : 70 + tx − y·tan 18°
-        const c = 70 + tx - y * TAN18;
-        g.setAttribute('x1', f(c - l / 2));
-        g.setAttribute('x2', f(c + l / 2));
-      });
-    }
     async function reflet() {
       await CO.wait(2500 + Math.random() * 2500);
       while (svg.isConnected) {
@@ -1454,20 +2307,25 @@
       }
     }
 
-    /* ---------- la caméra ---------- */
+    /* ---------- la caméra (elle déplace la pile : le grand SVG et ses couches, d'un bloc) ---------- */
     const suiveurs = new Set();
-    function etatCamera() { const m = matrice(getComputedStyle(svg).transform); return { zoom: m[0], x: m[4], y: m[5] }; }
-    function signaler() { if (!suiveurs.size) return; const e = etatCamera(); suiveurs.forEach((fn) => { try { fn(e); } catch (er) { console.warn('facade', er); } }); }
-    /** Le cadre voulu → une transformation CSS du <svg> (px de l'hôte, origine en haut à gauche). Deux sortes de
+    function etatCamera() { const m = camAnim ? matrice(getComputedStyle(pile).transform) : camM; return { zoom: m[0], x: m[4], y: m[5] }; }
+    function signaler() {
+      const e = etatCamera();
+      zoomCamera(e.zoom);
+      suiveurs.forEach((fn) => { try { fn(e); } catch (er) { console.warn('facade', er); } });
+    }
+    /** Le cadre voulu → une transformation CSS de la pile (px de l'hôte, origine en haut à gauche). Deux sortes de
         cadres : un rectangle de la scène (centré, entièrement visible, à 80 % de l'écran) ou { cx, cy, zoom } */
     function cadreCamera(r) {
-      const W = host.clientWidth, H = host.clientHeight;
+      const W = taille.W || host.clientWidth, H = taille.H || host.clientHeight;
       if (!W || !H) return null;
-      if (!r) return 'none';
+      if (!r) return { css: 'none', m: [1, 0, 0, 1, 0, 0] };
       const s = Math.min(W / 400, H / 560), ox = W / 2 - 200 * s, oy = H - 560 * s;
       const k = r.zoom || 0.8 * Math.min(W / (r.w * s), H / (r.h * s));
       const cx = ox + (r.cx != null ? r.cx : r.x + r.w / 2) * s, cy = oy + (r.cy != null ? r.cy : r.y + r.h / 2) * s;
-      return `translate(${(W / 2 - k * cx).toFixed(1)}px, ${(H / 2 - k * cy).toFixed(1)}px) scale(${k.toFixed(4)})`;
+      const tx = +(W / 2 - k * cx).toFixed(1), ty = +(H / 2 - k * cy).toFixed(1), kk = +k.toFixed(4);
+      return { css: `translate(${tx}px, ${ty}px) scale(${kk})`, m: [kk, 0, 0, kk, tx, ty] };
     }
     const animerCamera = (r, ms, easing = 'cubic-bezier(.55,0,.2,1)') => animerCameraPas([{ cadre: r || null, offset: 1, easing }], ms);
     /** Un mouvement de caméra en plusieurs temps : pas = [{ cadre, offset, easing }…] (easing : celui qui mène
@@ -1476,17 +2334,17 @@
       const tos = pas.map((p) => cadreCamera(p.cadre));
       camCadre = pas[pas.length - 1].cadre || null;
       if (tos.some((t) => t == null)) return Promise.resolve();
-      const neutre = 'translate(0px, 0px) scale(1)', v = (t) => (t === 'none' ? neutre : t);
-      const from = getComputedStyle(svg).transform, fin = tos[tos.length - 1];
+      const neutre = 'translate(0px, 0px) scale(1)', v = (t) => (t.css === 'none' ? neutre : t.css);
+      const from = camAnim ? getComputedStyle(pile).transform : pile.style.transform || 'none', fin = tos[tos.length - 1];
       if (camAnim) camAnim.cancel();
-      svg.style.transformOrigin = '0 0';
-      svg.style.transform = fin === 'none' ? '' : fin;
+      pile.style.transform = fin.css === 'none' ? '' : fin.css;
+      camM = fin.m;
       if (CO.reduced || ms <= 0) { signaler(); return Promise.resolve(); }
       const kf = [{ transform: from === 'none' ? neutre : from, easing: pas[0].easing || 'ease' }];
       pas.forEach((p, i) => kf.push({ transform: v(tos[i]), offset: p.offset, easing: (pas[i + 1] && pas[i + 1].easing) || 'linear' }));
       // (pas de will-change : Chrome rastériserait tout le calque à l'échelle maximale du mouvement, ×5, d'un
       // coup au départ ; redessinée à chaque image, la scène reste nette tout le long)
-      const a = (camAnim = svg.animate(kf, { duration: ms }));
+      const a = (camAnim = pile.animate(kf, { duration: ms }));
       let court = true;
       const boucle = () => { if (!court) return; signaler(); requestAnimationFrame(boucle); };
       requestAnimationFrame(boucle); // suivre() : chaque image du mouvement
@@ -1497,11 +2355,6 @@
     const CADRE_PORTE = { x: 262, y: 240, w: 104, h: 244 };
     const SEUIL = { cx: 314.5, cy: 368, zoom: 5 };
     let sequence = 0; // (une entrée ou une sortie en chasse une autre)
-    /** L'opacité d'un calque, en fondu CSS (ms = 0 : tout de suite) */
-    const regler = (el, op, ms = 0, delai = 0, ease = 'ease') => {
-      el.style.transition = ms > 0 ? `opacity ${Math.round(ms)}ms ${ease} ${Math.round(delai)}ms` : 'none';
-      el.style.opacity = String(op);
-    };
     function matrice(t) {
       if (!t || t === 'none') return [1, 0, 0, 1, 0, 0];
       const n = t.match(/-?[\d.]+(?:e-?\d+)?/g);
@@ -1509,11 +2362,16 @@
       const v = n.map(Number);
       return t.startsWith('matrix3d') ? [v[0], v[1], v[4], v[5], v[12], v[13]] : v.slice(0, 6);
     }
-    // si l'hôte change de taille, la caméra garde son cadrage (sans animation), et on prévient ceux qui suivent
-    if (window.ResizeObserver) new ResizeObserver(() => {
-      if (camCadre && !camAnim) { const to = cadreCamera(camCadre); if (to) svg.style.transform = to === 'none' ? '' : to; }
+    // si l'hôte change de taille, les couches se recalent, la caméra garde son cadrage (sans animation), et on
+    // prévient ceux qui suivent (la taille est gardée : versEcran() n'a pas à la relire, ni à forcer une mise en page)
+    if (window.ResizeObserver) new ResizeObserver((es) => {
+      const r = es[es.length - 1].contentRect;
+      taille.W = r.width; taille.H = r.height;
+      disposer();
+      if (camCadre && !camAnim) { const to = cadreCamera(camCadre); if (to) { pile.style.transform = to.css === 'none' ? '' : to.css; camM = to.m; } }
       signaler();
     }).observe(host);
+    else window.addEventListener('resize', () => { taille.W = 0; taille.H = 0; disposer(); signaler(); });
 
     const api = {
       svg,
@@ -1547,20 +2405,26 @@
         }
       },
 
-      /** La devanture se construit : elle se pose, les lettres s'allument une à une, l'atelier s'éclaire, la porte s'entrouvre */
+      /** La devanture se construit : elle se pose, les lettres s'allument une à une, l'atelier s'éclaire, la porte s'entrouvre
+          (chaque calque et ses jumeaux des autres couches jouent la même animation) */
       async play() {
         if (CO.reduced) return;
         const A = (el, kf, o) => el.animate(kf, { fill: 'backwards', easing: 'cubic-bezier(.2,.8,.2,1)', ...o });
+        const AA = (els, kf, o) => els.forEach((el) => tout.push(A(el, kf, o)));
         const sfx = (n, ms, o = {}) => CO.sfx.play(n, { ...o, delay: ms });
         const tout = [];
         tourPorte++;
         theta = 0;
         poser();
-        tout.push(A(svg, [{ opacity: 0 }, { opacity: 1 }], { duration: 380, easing: 'ease-out' }));
+        tout.push(A(pile, [{ opacity: 0 }, { opacity: 1 }], { duration: 380, easing: 'ease-out' }));
         tout.push(A(mur, [{ opacity: 0.4 }, { opacity: 1 }], { duration: 500 }));
         tout.push(A(etage, [{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 100 }));
-        tout.push(A(boutique, [{ opacity: 0, transform: 'translateY(24px)' }, { opacity: 1, transform: 'none' }], { duration: 650, delay: 120 }));
-        [dedans, reflets, vinyles].forEach((el) => tout.push(A(el, [{ transform: 'translateY(24px)' }, { transform: 'none' }], { duration: 650, delay: 120 }))); // (ils montent avec elle)
+        AA([boutique, pBoutique], [{ opacity: 0, transform: 'translateY(24px)' }, { opacity: 1, transform: 'none' }], { duration: 650, delay: 120 });
+        // (ils montent avec elle : l'intérieur, les reflets, les vinyles, et leurs couches ; les groupes des SVG en
+        // unités de la scène, les éléments posés sur l'hôte en px)
+        const sk = cadre ? cadre.s : 1;
+        AA([dedans, vinyles, avDedans, avReflets, pDedans, pVinyles, pVinylesP, pReflets], [{ transform: 'translateY(24px)' }, { transform: 'none' }], { duration: 650, delay: 120 });
+        AA([cvVitrine, cvReflet, chantSvg], [{ transform: `translateY(${f(24 * sk)}px)` }, { transform: 'none' }], { duration: 650, delay: 120 });
         tout.push(A(trottoir, [{ opacity: 0 }, { opacity: 1 }], { duration: 500, delay: 200 }));
         tout.push(A(ardoise, [{ opacity: 0, transform: 'translateY(30px)' }, { opacity: 1, transform: 'none' }], { duration: 650, delay: 500 }));
         // les lettres dorées s'allument une à une, avec une note d'enclume chacune
@@ -1570,16 +2434,17 @@
           sfx('rim', 700 + i * 85, { m: [72, 74, 76, 79, 81][i % 5] + (i > 4 ? 12 : 0), v: 0.7 });
         });
         // l'atelier s'éclaire : d'abord sombre, puis les lampes une à une
-        tout.push(A(dedans, [{ opacity: 0.15 }, { opacity: 0.15, offset: 0.3 }, { opacity: 0.7, offset: 0.45 }, { opacity: 0.45, offset: 0.55 }, { opacity: 1 }], { duration: 1100, delay: 1500, easing: 'linear' }));
+        AA([dedans, avDedans, pDedans, chantSvg, cvVitrine], [{ opacity: 0.15 }, { opacity: 0.15, offset: 0.3 }, { opacity: 0.7, offset: 0.45 }, { opacity: 0.45, offset: 0.55 }, { opacity: 1 }], { duration: 1100, delay: 1500, easing: 'linear' });
         [...lampes.children].forEach((l, i) => tout.push(A(l, [{ opacity: 0 }, { opacity: 1, offset: 0.4 }, { opacity: 0.5, offset: 0.55 }, { opacity: 1 }], { duration: 500, delay: 1750 + i * 140 })));
-        tout.push(A(vinyles, [{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 2000 }));
+        AA([vinyles, pVinyles, pVinylesP], [{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 2000 });
         // la porte s'entrouvre (si c'est ouvert), la lumière sort
         tout.push({ finished: CO.wait(2450).then(() => { if (!ouvert) return null; sfx('open', 0, { gain: 0.8 }); balancerPancarte(6); return pivoter(ENTRE, 950, CO.ease.outBack); }) });
         await Promise.all(tout.map((a) => a.finished.catch(() => {})));
       },
 
-      /** La vie continue (les boucles sans fin passent par CO.ambiance : petite cadence, arrêt hors écran ;
-          les gestes de Clément et le reflet vérifient que la devanture se voit) */
+      /** La vie continue : Clément et la finisseuse dans la toile (à leur cadence, seulement quand la devanture se
+          voit) ; la respiration de la lumière de la porte et ses poussières jouent sur le compositeur (CO.ambiance
+          les met en pause hors de l'écran) ; le reflet et le courant d'air vérifient que la devanture se voit */
       idle(fige) {
         if (vivant) return;
         if (CO.reduced || fige === true || (fige && fige.fige)) {
@@ -1591,24 +2456,19 @@
         const vit = (a) => CO.ambiance.anime(a, host);
         tourner(ouvert);
         reflet();
-        // la lumière de la porte respire (par petits paliers), des poussières dorées flottent dedans
-        const paliers = { duration: 3000, direction: 'alternate', iterations: Infinity, easing: 'steps(8, jump-none)' };
-        vit(haloE.animate([{ opacity: 0.7, easing: 'ease-in-out' }, { opacity: 1 }], paliers));
-        vit(chant.animate([{ opacity: 0.55, easing: 'ease-in-out' }, { opacity: 0.95 }], paliers));
-        // (toutes ces boucles changent sur la même grille de 125 ms : elles se repeignent ensemble, ~8 fois par seconde)
+        // la lumière de la porte respire, des poussières dorées flottent dedans (le compositeur les joue)
+        const respire = { duration: 3000, direction: 'alternate', iterations: Infinity };
+        vit(haloSvg.animate([{ opacity: 0.7, easing: 'ease-in-out' }, { opacity: 1 }], respire));
+        vit(chantSvg.animate([{ opacity: 0.55, easing: 'ease-in-out' }, { opacity: 0.95 }], respire));
         moutesEls.forEach((m, i) => {
           const dx = (Math.random() - 0.5) * 16, dy = -(16 + Math.random() * 28);
-          vit(m.animate([{ opacity: 0, transform: 'translate(0px, 0px)' }, { opacity: 0.9, offset: 0.35 }, { opacity: 0, transform: `translate(${f(dx)}px, ${f(dy)}px)` }], { duration: 6000, delay: i * 2000, iterations: Infinity, easing: 'steps(48, jump-none)' }));
+          vit(m.animate([{ opacity: 0, transform: 'translate(0px, 0px)' }, { opacity: 0.9, offset: 0.35 }, { opacity: 0, transform: `translate(${f(dx)}px, ${f(dy)}px)` }], { duration: 6000, delay: i * 2000, iterations: Infinity }));
         });
-        // de temps en temps, un courant d'air pousse la porte (on a envie de la toucher)
+        // de temps en temps, un courant d'air pousse la porte (on a envie de la toucher) : joué sur le compositeur
         const courantDair = async () => {
           await CO.wait(9000 + Math.random() * 8000);
           if (!svg.isConnected) return;
-          if (!toque && ouvert && !entre && visible()) {
-            balancerPancarte(3.5);
-            await pivoter(ENTRE + 0.1, 1100, CO.ease.inOutSine, true);
-            if (!toque && ouvert) await pivoter(ENTRE, 1500, CO.ease.inOutSine, true);
-          }
+          if (!toque && ouvert && !entre && !camAnim && !courant && visible() && Math.abs(theta - ENTRE) < 1e-6) await courantCompositeur(0.1, 1100, 1500, 3.5);
           courantDair();
         };
         courantDair();
@@ -1642,10 +2502,13 @@
           ms : 0 pour se poser d'un coup sur le seuil (sans son). */
       entrer({ ms = 1600 } = {}) {
         const id = ++sequence, t = CO.reduced ? 0 : Math.max(0, ms);
+        arreterCourant();
         entre = true;
         toque = true; // (le courant d'air et setStatut ne touchent plus à la porte)
-        regler(reflets, 0, t * 0.3, t * 0.5);
-        regler(entreeLum, 1, t * 0.42, t * 0.22, 'ease-out');
+        regler(refletsT, 0, t * 0.3, t * 0.5);
+        opRefl = 0;
+        entreeSvg.style.visibility = 'visible';
+        regler(entreeSvg, 1, t * 0.42, t * 0.22, 'ease-out');
         regler(chaleur, 0.94, t * 0.4, t * 0.6, 'ease-in');
         tamis.slice(1).forEach((el) => regler(el, 0, t * 0.3, t * 0.2)); // même fermé, la boutique s'allume
         const th0 = theta, l0 = lumK, lumFin = lumEntree();
@@ -1671,10 +2534,12 @@
           si c'est ouvert, close sinon. ms : 0 pour revenir d'un coup (sans son). */
       sortir({ ms = 900 } = {}) {
         const id = ++sequence, t = CO.reduced ? 0 : Math.max(0, ms);
+        arreterCourant();
         entre = false;
         regler(chaleur, 0, t * 0.45, 0, 'ease-out');
-        regler(entreeLum, 0, t * 0.55, t * 0.1);
-        regler(reflets, nuit ? 0.4 : 1, t * 0.5, t * 0.3);
+        regler(entreeSvg, 0, t * 0.55, t * 0.1);
+        regler(refletsT, nuit ? 0.4 : 1, t * 0.5, t * 0.3);
+        opRefl = nuit ? 0.4 : 1;
         tamis.slice(1).forEach((el) => regler(el, ouvert ? 0 : 0.45, t * 0.5, t * 0.35));
         const camera = animerCameraPas([{ cadre: null, offset: 1, easing: 'cubic-bezier(.3,0,.2,1)' }], t * 0.68);
         const repos = ouvert ? ENTRE : 0, lumFin = lumRepos();
@@ -1686,20 +2551,24 @@
           if (Math.abs(th0 - repos) > 0.05) { CO.sfx.play('bell', { v: 0.55 }); balancerPancarte(5); }
           await CO.tween(t * 0.5, (e) => { if (tp === tourPorte) { theta = th0 + (repos - th0) * e; lumK = l0 + (lumFin - l0) * e; poser(); } }, CO.ease.inOutSine);
         })();
+        // (la lumière de l'entrée éteinte, sa couche se cache : plus rien à composer)
+        const cacheEntree = () => { if (!entre && id === sequence) entreeSvg.style.visibility = 'hidden'; };
+        if (t <= 0) cacheEntree(); else setTimeout(cacheEntree, t * 0.65 + 60);
         return Promise.all([camera, fermer]).then(() => { if (id === sequence) toque = false; });
       },
       /** La caméra : on s'approche d'un rectangle du décor (repère de la scène ; centré, entièrement visible,
           avec un peu de décor autour : il occupe 80 % de l'écran), ou on recule (null). Transformation CSS
-          du <svg> : fluide pendant le mouvement, redessinée nette à l'arrivée. */
+          de la pile : fluide pendant le mouvement, redessinée nette à l'arrivée. */
       camera(r, ms = 800) { return animerCamera(r || null, ms); },
       /** fn({ zoom, x, y }) à chaque image d'un mouvement de caméra (et quand l'hôte change de taille) : pour
           que l'appli déplace avec elle ce qu'elle pose par-dessus (l'enseigne). Renvoie de quoi arrêter. */
       suivre(fn) { suiveurs.add(fn); return () => suiveurs.delete(fn); },
-      /** Un rectangle de la scène → sa place en px dans l'hôte (cadrage et caméra compris, même en mouvement) */
+      /** Un rectangle de la scène → sa place en px dans l'hôte (cadrage et caméra compris, même en mouvement ;
+          sans forcer de mise en page : la taille de l'hôte est gardée, la caméra au repos aussi) */
       versEcran(r) {
-        const W = host.clientWidth, H = host.clientHeight, s = Math.min(W / 400, H / 560);
+        const W = taille.W || host.clientWidth, H = taille.H || host.clientHeight, s = Math.min(W / 400, H / 560);
         const ox = W / 2 - 200 * s, oy = H - 560 * s;
-        const m = matrice(getComputedStyle(svg).transform);
+        const m = camAnim ? matrice(getComputedStyle(pile).transform) : camM;
         const pt = (x, y) => { const X = ox + x * s, Y = oy + y * s; return [m[0] * X + m[2] * Y + m[4], m[1] * X + m[3] * Y + m[5]]; };
         const a = pt(r.x, r.y), b = pt(r.x + (r.w || 0), r.y + (r.h || 0));
         return { left: a[0], top: a[1], width: b[0] - a[0], height: b[1] - a[1] };
@@ -1707,6 +2576,34 @@
       /** L'ombre portée de l'enseigne suit sa rotation : yaw en radians, 0 = vue de face (parallèle au mur),
           ±π/2 = de chant (perpendiculaire au mur, comme une vraie enseigne drapeau) */
       ombreEnseigne(yaw) { ombre(+yaw || 0); },
+      /** (banc d'essai, pour le labo : des états figés, pour comparer des captures) */
+      essai(quoi, v) {
+        const n = +v;
+        if (quoi === 'pose') { Object.assign(etat, POSES[v] || POSES.leve); poserBras(); }
+        else if (quoi === 'finisseuse') {
+          Object.assign(etat, POSES.bas); etat.marteau = 0; poserBras();
+          marteauPose.setAttribute('opacity', 1);
+          poserCorps(-14 * n, 0); tournerTete(n);
+          brasG.setAttribute('transform', `translate(-17.5 -142) rotate(${f(12 - 70 * n)})`);
+          segAvant.setAttribute('opacity', (1 - n).toFixed(3)); segMain.setAttribute('opacity', (1 - n).toFixed(3));
+          aLaBrosse.style.transition = 'none'; aLaBrosse.style.opacity = '1';
+        } else if (quoi === 'hocher') hocher(7 * n, 0.6 * n);
+        else if (quoi === 'reflet') poserReflet(n, 1);
+        else if (quoi === 'porte') { arreterCourant(); tourPorte++; theta = n; poser(); }
+        else if (quoi === 'courant') { // le courant d'air (sans balancer la pancarte), arrêté à l'instant n (ms) de son battement
+          const go = () => {
+            if (!cadre || !visible()) { requestAnimationFrame(go); return; }
+            courantCompositeur(0.1, 1100, 1500, 0);
+            if (courant) courant.anims.forEach((a) => { a.pause(); a.currentTime = n; });
+          };
+          go();
+        }
+        else if (quoi === 'defile') defile.setAttribute('transform', `translate(0 ${f(n * 2.6 / 3)})`);
+        else if (quoi === 'pied') piedChaussure.setAttribute('transform', `translate(0 ${f(n)})`);
+        else if (quoi === 'clement') montrerClement(!!n, 0);
+      },
+      /** (mesure, pour le labo : combien d'images la toile de la vitrine a peintes) */
+      get images() { return vitrine.images; },
     };
 
     appliquer(0);

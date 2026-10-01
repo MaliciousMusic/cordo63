@@ -107,7 +107,8 @@
     return (TEX[nom] = r);
   };
   /** grain de pierre : piqué clair et sombre (raccordable) */
-  const texGrain = () => tex('grain', () => {
+  const texGrain = () => tex('grain', fabGrain);
+  function* fabGrain() {
     const N = 128, c = toile(N, N), x = c.getContext('2d'), r = CO.rng(305);
     for (let i = 0; i < 2600; i++) {
       const clair = r() < 0.38;
@@ -116,9 +117,10 @@
       x.fillRect(px, py, s, s);
       if (px > N - 2) x.fillRect(px - N, py, s, s);
       if (py > N - 2) x.fillRect(px, py - N, s, s);
+      if (i % 650 === 649) yield;
     }
     return c;
-  });
+  }
   /** le bois : un fil droit qui ondule à peine, des pores allongés, quelques rayons (raccordable en x) */
   const texBois = (nom, base, sombre, clair, graine) => tex(nom, () => fabBois(base, sombre, clair, graine));
   function* fabBois(base, sombre, clair, graine) {
@@ -136,28 +138,31 @@
       const o = (j * W + i) * 4;
       const col = k < 0.5 ? S.map((s2, q) => lerp(s2, B[q], k * 2)) : B.map((b, q) => lerp(b, L[q], (k - 0.5) * 2));
       d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255;
-      if (i === W - 1 && j % 8 === 7) yield;
+      if (i === W - 1 && j % 2 === 1) yield; // (un pas tous les deux rangs : jamais de longue tâche, même à CPU ×4)
     }
     x.putImageData(img, 0, 0);
     return c;
   }
   /** fabrique les textures du décor pas à pas (un générateur) */
   function* prechauffer() {
-    if (!TEX.chene) { const r = fabBois('#86603E', '#583A24', '#A87E56', 71); let e; while (!(e = r.next()).done) yield; TEX.chene = e.value; }
-    texGrain(); yield;
-    texAgglo(); yield;
+    const pas = function* (nom, fab) { if (TEX[nom]) return; const r = fab(); let e; while (!(e = r.next()).done) yield; TEX[nom] = e.value; };
+    yield* pas('chene', () => fabBois('#86603E', '#583A24', '#A87E56', 71));
+    yield* pas('grain', fabGrain); yield;
+    yield* pas('agglo', fabAgglo); yield;
   }
   const texChene = () => texBois('chene', '#86603E', '#583A24', '#A87E56', 71);
-  const texAgglo = () => tex('agglo', () => { // l'aggloméré brun usé de l'établi
+  const texAgglo = () => tex('agglo', fabAgglo); // l'aggloméré brun usé de l'établi
+  function* fabAgglo() {
     const N = 128, c = toile(N, N), x = c.getContext('2d'), r = CO.rng(72);
     x.fillStyle = '#5A4232';
     x.fillRect(0, 0, N, N);
     for (let i = 0; i < 1800; i++) {
       x.fillStyle = r() < 0.5 ? `rgba(150,112,80,${r() * 0.35})` : `rgba(20,12,6,${r() * 0.35})`;
       x.beginPath(); x.ellipse(r() * N, r() * N, 0.6 + r() * 2.4, 0.4 + r() * 1.2, r() * 3, 0, TAU); x.fill();
+      if (i % 450 === 449) yield;
     }
     return c;
-  });
+  }
   const motif = (g, img, k, ox = 0, oy = 0, rot = 0) => { // un motif à l'échelle k (cm par pixel), ancré
     const p = g.createPattern(img, 'repeat');
     if (p.setTransform && window.DOMMatrix) p.setTransform(new DOMMatrix().translate(ox, oy).rotate(rot * 180 / Math.PI).scale(k));
@@ -171,7 +176,7 @@
   /** le mur de moellons : pierres chaudes (beige, brun, gris, quelques ocres) dans un mortier sombre,
       comme vu depuis la rue (co-facade.js) ; la lumière des lampes s'y pose en flaques chaudes */
   function peindreMur(g, x0, x1, y0, nuit, lampes) { const it = peindreMurPas(g, x0, x1, y0, nuit, lampes); while (!it.next().done); }
-  /** le même, pas à pas (un générateur : on rend la main au navigateur toutes les ~120 pierres) */
+  /** le même, pas à pas (un générateur : on rend la main au navigateur toutes les ~50 pierres) */
   function* peindreMurPas(g, x0, x1, y0, nuit, lampes) {
     const r = CO.rng(305);
     const H = -y0 + 2;
@@ -189,7 +194,8 @@
       }
       pierres.push({ pts, cx, cy, w, h, col: C.pierre[Math.floor(r() * C.pierre.length)], ocre: r() < 0.14, sombre: r() < 0.12 });
     };
-    for (let y = 1; y > y0 - 24;) {
+    for (let y = 1, rang = 0; y > y0 - 24; rang++) {
+      if (rang % 4 === 3) yield;
       const h = 7 + r() * 9;
       for (let x = x0 - r() * 20; x < x1 + 20;) {
         const grand = r() < 0.1, w = grand ? 20 + r() * 14 : 9 + r() * 17, hh = grand ? h * 1.75 : h * (0.72 + r() * 0.28);
@@ -209,7 +215,7 @@
       g.beginPath(); lisse(g, p.pts, true, 0.08);
       g.fillStyle = p.sombre ? '#6E6254' : p.ocre ? '#A98A62' : p.col;
       g.fill();
-      if (i % 160 === 159) yield;
+      if (i % 80 === 79) yield;
     }
     // le grain, sur les pierres seulement (par bandes : chaque pierre est dans une seule bande)
     const NB = 8, hB = H / NB;
@@ -232,7 +238,7 @@
     yield;
     for (let i = 0; i < pierres.length; i++) {
       const p = pierres[i];
-      if (i % 90 === 89) yield;
+      if (i % 45 === 44) yield;
       g.beginPath(); lisse(g, p.pts, true, 0.08);
       g.fillStyle = lin(g, 0, p.cy - p.h / 2, 0, p.cy + p.h / 2, [[0, 'rgba(255,240,215,0.22)'], [0.4, 'rgba(255,240,215,0.02)'], [1, 'rgba(30,20,12,0.32)']]);
       g.fill();
@@ -675,7 +681,9 @@
     { x: 200, w: 16, r: 13.4, type: 'crin' },
   ];
   const ARBRE_Y = -99;
-  function peindreFinisseuse(g, fam) {
+  function peindreFinisseuse(g, fam) { const it = peindreFinisseusePas(g, fam); while (!it.next().done); }
+  /** la même, pas à pas (un générateur) */
+  function* peindreFinisseusePas(g, fam) {
     const x0 = 96, x1 = 222;
     ombrePose(g, 159, 0, 150, 0.5);
     // les roulettes
@@ -690,6 +698,7 @@
     g.transform(0.32, -0.07, 0, 1, x1 + 1.2, -30);
     texte(g, 'SUR', 8, -18, 16, { police: fam, poids: 800, couleur: 'rgba(255,255,255,0.9)', rot: -Math.PI / 2 });
     g.restore();
+    yield;
     // le caisson bas : cadre rouge, porte noire (le sac à poussière)
     plaque(g, x0, -82, x1 - x0, 74, C.rouge, { r: 1, reflet: 0.2, ombre: 0.35 });
     plaque(g, x0 + 6, -74, x1 - x0 - 12, 60, '#1A1A1C', { r: 1.2, reflet: 0.08, ombre: 0.4 });
@@ -710,6 +719,7 @@
     g.fillRect(x0 + 2, -86, x1 - x0 - 4, 5);
     g.fillStyle = '#3A3A3C';
     for (let x = x0 + 4; x < x1 - 4; x += 2.4) g.fillRect(x, -85.4, 1.2, 3.8);
+    yield;
     // la cavité des brosses (l'intérieur du capot, sombre)
     g.fillStyle = lin(g, 0, -115, 0, -86, [[0, '#120404'], [0.5, '#2A0A0C'], [1, '#0A0303']]);
     g.fillRect(x0 + 2, -115, x1 - x0 - 4, 30);
@@ -727,6 +737,7 @@
     plaque(g, x0 + 8, -145, 36, 13, '#F4F1EA', { r: 1, reflet: 0.2, ombre: 0.15 });
     texte(g, 'SUR', x0 + 19, -138.4, 8.5, { police: fam, poids: 800, couleur: C.rouge, ecart: 0.5 });
     texte(g, 'mini II', x0 + 35, -138, 4.2, { police: fam, poids: 700, couleur: '#2A2420' });
+    yield;
     // le pupitre de commande (à droite, sous la main de Clément) : arrêt d'urgence, marche, arrêt, compte-tours
     const px = x1 - 51;
     plaque(g, px, -145, 46, 22, '#1E1F22', { r: 1.2, reflet: 0.12, ombre: 0.3 });
@@ -743,6 +754,7 @@
     g.fillRect(px + 18, -130.5, 20, 4.5);
     g.fillStyle = '#9EA3A8';
     [px + 41].forEach((bx) => { g.beginPath(); g.arc(bx, -134, 2.2, 0, TAU); g.fill(); });
+    yield;
     // le dessus (un peu vu d'en haut) et ce qui traîne : boîte de cire, brosse, bombe, chiffon
     g.fillStyle = lin(g, 0, -156, 0, -151, [[0, '#9A1A1E'], [1, '#E23A36']]);
     g.beginPath(); g.moveTo(x0 + 1, -151); g.lineTo(x0 + 5, -156); g.lineTo(x1 + 4, -156); g.lineTo(x1, -151); g.closePath(); g.fill();
@@ -1286,7 +1298,7 @@
     peindreSousMain, peindrePlateauCles, peindreLiasse, peindreBouts, peindreChute, peindreCire,
     tube, plaque, ombrePose, texte, peindreClim, peindreSmall, peindreArmoire, planche, peindrePolaroids, peindreRatelier, peindrePendule,
     peindreCles, peindreEtageres, peindreSac, peindrePorte, peindreFinisseuse, peindrePresse, peindreEtabli, peindreCouture, peindreNettoyage,
-    peindreComptoirCles, peindreLampe, peindreSemelles, peindreSacPapier, peindreRadio, peindreCarnet, peindreTablette, peindreSonnette,
+    peindreComptoirCles, peindreLampe, peindreFinisseusePas, peindreSemelles, peindreSacPapier, peindreRadio, peindreCarnet, peindreTablette, peindreSonnette,
     peindreCirages, peindrePlante, peindreBoite, peindrePot,
     ROUES, ARBRE_Y, ETABLI, COUTURE, NETTOYAGE, CLES, RADIO, CARNET,
   };

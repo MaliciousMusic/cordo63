@@ -126,10 +126,17 @@
           if (scene && scene.pause) scene.pause();
         }
       });
-      // la scène se prépare en douce une fois l'accueil installé (le premier passage est alors immédiat)
+      // la scène se prépare en douce une fois l'appli installée (le premier passage est alors immédiat) : dès qu'elle est
+      // prête sous l'ouverture aux lacets (« coulisses » : l'écran est couvert, rien ne bouge), sinon à son dévoilement.
+      // En tranches courtes, en veille pendant qu'on touche l'écran et pendant l'animation des lacets (co-boutique.js).
       const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
       if (CO.view === 'atelier') arriver();
-      else CO.on('ouverture', () => idle(() => preparer(), { timeout: 5000 })); // pas pendant l'ouverture aux lacets
+      else {
+        let lancee = false;
+        const enDouce = () => { if (lancee) return; lancee = true; idle(() => preparer(), { timeout: 5000 }); };
+        CO.on('coulisses', enDouce);
+        CO.on('ouverture', enDouce);
+      }
     },
   };
 })();

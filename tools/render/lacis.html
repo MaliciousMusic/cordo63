@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Toile de l'ouverture</title>
+<style>
+  html, body { margin: 0; background: #231811; }
+  /* la toile de l'ouverture au repos, avec le code même de l'ouverture (CO.splash.toile) : c'est le fond de
+     #splash (assets/img/lacis.webp), le premier état de l'écran, avant tout script ; le canevas la relaie
+     ensuite sans que rien ne bouge (même réseau, centré, même graine). 640 × 1000 : un téléphone, le
+     téléphone sur ordinateur, avec de la marge. Entre les mailles, rien (transparent) : l'établi sombre du fond
+     de #splash s'y voit, comme sous le canevas. window.image, window.miniature (32 × 50) : en WebP. */
+  #ic { width: 640px; height: 1000px; overflow: hidden; }
+  #ic canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="ic"><canvas></canvas></div>
+<script src="../../js/co-core.js"></script>
+<script src="../../js/co-lacets.js"></script>
+<script src="../../js/co-splash.js"></script>
+<script>
+  const W = 640, H = 1000, dpr = window.devicePixelRatio || 1;
+  const cv = document.querySelector('#ic canvas');
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const ctx = cv.getContext('2d');
+  CO.splash.toile.peindre(ctx, CO.splash.toile.preparer(ctx, W, H, dpr));
+  window.image = cv.toDataURL('image/webp', 0.82);
+  // la miniature : 32 × 50, en WebP, pour la feuille de style (elle paraît floue, tout de suite)
+  const m = document.createElement('canvas');
+  m.width = 32; m.height = 50;
+  const g = m.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(cv, 0, 0, 32, 50);
+  window.miniature = m.toDataURL('image/webp', 0.6);
+  document.getElementById('ic').dataset.pret = '1';
+</script>
+</body>
+</html>

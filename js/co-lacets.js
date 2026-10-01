@@ -285,8 +285,11 @@
         l.t2.setAttribute('dy', f2(corps * 0.39 + 0.75));
         preparer(l);
       });
+      // la longueur des mots, lue pour tous d'un coup (une seule mise en page), puis la suite
+      lacets.forEach((l) => { try { l.tl = l.t1.getComputedTextLength() || 0; } catch (e) { l.tl = 0; } });
+      lacets.forEach((l) => finir(l));
     }
-    // la forme d'un lacet : sa vague (graine = son nom), ses bouts, ses torsions
+    // la forme d'un lacet : sa vague (graine = son nom), ses bouts (puis finir() : ses torsions, ses dégradés, son dessin)
     function preparer(l) {
       const R = CO.rng ? CO.rng(CO.hash ? CO.hash(l.item.label + ':' + l.i) : 3 + l.i) : Math.random;
       l.base = marge + pas / 2;
@@ -311,7 +314,8 @@
       table(l);
       l.s0 = sDeX(l, l.xL);
       l.L = sDeX(l, l.xR) - l.s0;
-      try { l.tl = l.t1.getComputedTextLength() || 0; } catch (e) { l.tl = 0; }
+    }
+    function finir(l) {
       placerTorsions(l);
       degrades(l);
       if (l.etat === 'dehors') { l.svg.style.visibility = 'hidden'; return; }
@@ -848,13 +852,15 @@
       repli.forEach((n) => host.appendChild(n));
     }
 
-    largeur = Math.round(root.getBoundingClientRect().width);
-    mesurer();
-    // la police arrivée, le mot a sa vraie longueur : les torsions se posent à côté
+    // la première mesure : au premier rappel de l'observateur de taille (juste après la mise en page, avant la première
+    // image : rien à forcer pendant que l'appli se construit) ; sans lui, tout de suite
+    if (!ro) { largeur = Math.round(root.getBoundingClientRect().width); mesurer(); }
+    // la police arrivée, le mot a sa vraie longueur : les torsions se posent à côté (lues d'un coup ; pas encore mesurés :
+    // la première mesure s'en chargera)
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {
-      if (detruit) return;
+      if (detruit || !largeur) return;
+      lacets.forEach((l) => { try { l.tl = l.t1.getComputedTextLength() || l.tl; } catch (e) { /* rien */ } });
       lacets.forEach((l) => {
-        try { l.tl = l.t1.getComputedTextLength() || l.tl; } catch (e) { /* rien */ }
         placerTorsions(l);
         if (l.etat === 'repos') dessiner(l);
       });

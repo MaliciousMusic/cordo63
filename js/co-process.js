@@ -1425,8 +1425,9 @@
       ];
       const tout = Promise.all(debut).then(() => {
         this.tPrep.debut = now() - t0;
-        // (la suite, une par une : le premier plan reste fluide ; à l'arrêt, on redessine à chaque arrivée)
-        const redessiner = () => { if (!this.raf && !this.detruit && this.visible) this.dessiner(this.t); };
+        // (la suite, une par une : le premier plan reste fluide ; à l'arrêt, on redessine à chaque arrivée ; en
+        // marche, l'image suivante s'en charge)
+        const redessiner = () => { this.sale = true; if (!this.raf && !this.detruit && this.visible) this.dessiner(this.t); };
         return suite.reduce((p, f) => p.then(f).then(redessiner), Promise.resolve());
       }).then(() => M.calcul.lancer(this.prechauffer(), 1, 'préchauffe')).then(() => {
         this.tPrep.tout = now() - t0;
@@ -1479,19 +1480,24 @@
       const V = this.V;
       if (bas && this.fondPlein) return this.fondPlein;
       const cle = [VERSION, 'fond', V.W + 'x' + V.H, V.ppm.toFixed(2)].join('|');
-      let c = R.cache.get(cle);
-      if (!c && !/[?&]nocache\b/.test(location.search)) {
-        const v = await R.coffre.get(cle);
-        if (v) { const cv = await R.dePNG(v); if (cv) c = { canvas: cv, px: cv.width * cv.height }; }
+      const coffre = !/[?&]nocache\b/.test(location.search);
+      let c = R.cache.get(cle), base = null;
+      if (!c && coffre) {
+        // le téléphone garde l'aggloméré et le tapis tels quels (ses pixels, sans encodage) : le décor posé dessus
+        // revient de ses propres sprites, recomposé à l'identique
+        const vb = await R.coffre.get(cle + '|base');
+        if (vb) base = await R.deCoffre(vb);
       }
-      if (c) bas = false; // (le plein est déjà là : pas besoin du brouillon)
+      if (base) bas = false; // (le plein est déjà là : pas besoin du brouillon)
       if (!c) {
         // bas : en demi-définition (quatre fois moins de calcul), agrandi ; le vrai viendra le remplacer
         const f = bas ? 0.5 : 1, w = Math.ceil(V.W * f), h = Math.ceil(V.H * f);
-        const sp = await M.calcul.lancer(O.fond({
+        const sp = base ? { canvas: base } : await M.calcul.lancer(O.fond({
           cadre: { bx0: V.x0, by0: V.y0, w, h }, ppm: V.k * f, graine: SC.graine,
           tapis: { x: SC.tapis.x, y: SC.tapis.y, angle: SC.tapis.angle, W: SC.tapis.W, H: SC.tapis.H }, oeil: { x: 0, y: 0 },
         }), prio, bas ? 'fond (brouillon)' : 'fond');
+        if (!base && !bas && coffre && sp._brut) R.versCoffre(sp.canvas, sp._brut).then((b) => b && R.coffre.put(cle + '|base', b));
+        sp._brut = null;
         const cv = R.canvas(V.W, V.H), g = cv.getContext('2d');
         g.imageSmoothingQuality = 'high';
         g.drawImage(sp.canvas, 0, 0, V.W, V.H);
@@ -1506,7 +1512,6 @@
         for (const { d, x } of ds) poserSprite(g, V, x, d.x, d.y, d.a * DEG);
         c = { canvas: cv, px: V.W * V.H };
         if (bas) { if (!this.fondPlein) this.fondCv = cv; return c; }
-        R.versPNG(cv).then((b) => b && R.coffre.put(cle, b));
       }
       R.cache.set(cle, c);
       this.fondCv = c.canvas;
@@ -2001,7 +2006,8 @@
           this.t = t1;
         }
         this.emettre(this.etapeA(this.t));
-        this.dessiner(this.t);
+        // (en attendant ses objets, l'image ne change pas : on ne la refait que si quelque chose est arrivé)
+        if (ok || this.sale || this.tDessin !== this.t) { this.sale = false; this.tDessin = this.t; this.dessiner(this.t); }
         if (this.actif()) this.raf = requestAnimationFrame(pas);
       };
       this.raf = requestAnimationFrame(pas);

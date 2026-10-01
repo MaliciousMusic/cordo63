@@ -398,11 +398,28 @@
       const cr = $('#compte-creer');
       if (cr) cr.addEventListener('click', () => { if (CO.Compte) CO.Compte.ouvrir(); });
       CO.on('compte', surCompte);
-      // les mains et le maillet se calculent en avance, dès qu'on ouvre Mes tickets
-      CO.on('view', (v) => { if (v === 'tickets') { mesurer(); if (CO.Clouage && CO.Clouage.preparer) setTimeout(() => CO.Clouage.preparer(), 600); } });
+      // les mains et le maillet se calculent en avance : aux temps morts dès que l'appli est prête sous l'ouverture
+      // (« coulisses », ou « ouverture » si elle vient d'abord) ; en douceur sur Mes tickets (une tranche après chaque
+      // image : le défilement reste fluide) ; quand Clément tape son code, ce qui reste passe devant (valider)
+      const preparer = (o) => { if (CO.Clouage && CO.Clouage.preparer) CO.Clouage.preparer(o); };
+      let prete = false;
+      const coulisses = () => { if (!prete) { prete = true; setTimeout(() => preparer({ fond: true }), 300); } };
+      CO.on('coulisses', coulisses);
+      CO.on('ouverture', coulisses);
+      // la carte en vue : Clément va sans doute y planter un clou, ce qui reste se calcule tout de suite (par tranches)
+      let carteVue = false;
+      const approche = () => preparer(carteVue ? undefined : { doux: true });
+      // (la mesure attend la première image de la vue : pas de mise en page forcée dans la bascule d'onglet)
+      CO.on('view', (v) => { if (v === 'tickets') { requestAnimationFrame(() => setTimeout(mesurer, 0)); setTimeout(() => { if (CO.view === 'tickets') approche(); }, 600); } });
       const cuir = $('#cuir');
       if (cuir && window.ResizeObserver) new ResizeObserver(() => mesurer()).observe(cuir);
       else window.addEventListener('resize', mesurer);
+      if (cuir && window.IntersectionObserver) {
+        new IntersectionObserver((es) => {
+          carteVue = es[es.length - 1].isIntersecting;
+          if (carteVue && CO.view === 'tickets') approche();
+        }, { threshold: 0.3 }).observe(cuir);
+      }
     },
   };
 })();

@@ -5,7 +5,7 @@ Le site de la cordonnerie de **Clément Petit**, place du Mazet à Clermont-Ferr
 **L'idée** : Clément a inversé l'atelier et la boutique « avec l'ambition que l'on me voie travailler. Je suis ma vitrine » (La Montagne, 2023). Le site fait pareil : lui et son process au cœur, et une vraie prise de commande (le ticket jaune).
 
 Direction artistique, tirée de leur identité réelle :
-- **le logo CORDO63** (grotesque très large et fine, vert sauge #8A927B sur crème #FFF2E2), reconstruit en tracés d'après leur avatar Instagram (`tools/logo/`) ; **le logo de l'appli** : CORDO63 en noir sur crème, un lacet rouge qui passe dessus, dessous, entre les lettres (`assets/brand/logo-cordo63-lacet.svg`, les icônes, le favicon « 63 ») ;
+- **le logo CORDO63** (grotesque très large et fine, vert sauge #8A927B sur crème #FFF2E2), reconstruit en tracés d'après leur avatar Instagram (`tools/logo/`) ; **le logo au lacet** : CORDO63 en noir sur crème, un lacet rouge qui passe dessus, dessous, entre les lettres (`assets/brand/logo-cordo63-lacet.svg`) ; **l'icône de l'appli** : CORDO puis 63 en cubes de bois lettrés et peints (les perles de l'ouverture) enfilés sur le lacet rouge, les lettres aussi grandes que la largeur le permet (lisibles à 60 px), dessinées en petit corps ; le favicon : « 63 » en deux cubes ;
 - **la devanture** d'après la vue de la rue : l'immeuble d'angle (la rue d'à côté en simple tranche au bord gauche), l'enduit crème, la pierre de Volvic, les volets sauge, le bandeau vert clair aux lettres dorées « CORDONNERIE », et derrière la vitre l'atelier éclairé où Clément travaille ;
 - **l'enseigne** : leur Air Jordan 1 sculptée dans le bois, un modèle 3D rendu une fois pour toutes en images (48 poses sur un tour, de jour et de nuit : rien à calculer sur le téléphone). Le cadre d'acier est fixé au bandeau ; la chaussure tourne doucement sur sa broche (un tour en 14 s), et on peut la relancer du doigt ;
 - **l'enseigne-soulier** en tête de l'accueil : une derby en tôle peinte sauge bordée d'or, pendue à deux chaînes, OUVERT / FERMÉ / PAUSE ; on la touche, elle déplie les horaires en accordéon ;
@@ -68,6 +68,7 @@ css/co-accueil.css        l'enseigne-soulier et les lacets
 css/co-plans.css          la vignette des plans dans le catalogue, la feuille du grand plan
 css/co-tickets.css        Mes tickets : le mur, les souches pendues, l'établi de la carte, la fiche
 css/co-splash.css         l'ouverture aux lacets
+css/co-bureau.css         sur ordinateur : l'appli dans un téléphone posé sur l'établi (présentation, QR, barre d'état)
 css/fonts.css             polices hébergées (généré par tools/fetch-fonts.py)
 js/co-core.js             hasard seedé, bruit, maths, couleurs, SVG, stockage, cadence des animations, sons WebAudio
                           (CO.sfx.ajouter / ajouterVoix : les modules y ajoutent leurs sons)
@@ -101,12 +102,12 @@ js/co-boutique.js         la scène de l'atelier : caméra, boucle d'activités,
 js/co-dialogue.js         les bulles de Clément et nos réponses
 js/co-atelier.js          l'onglet L'atelier : la scène, ses cibles, l'entrée et la sortie
 js/co-nous.js             « Tout lire » : volets, pile de photos, étapes
-js/co-splash.js           l'ouverture : les lacets qui couvrent l'écran puis s'en vont, sur le beat de l'atelier
+js/co-splash.js           l'ouverture : les lacets qui couvrent l'écran (dès la première image : assets/img/lacis.webp) puis s'en vont, sur le beat de l'atelier
 js/co-app.js              onglets, feuilles, son, horaires, devanture + enseigne, entrée dans la boutique
 tools/build-pages.mjs     HTML statique (services, process, histoire, avis, horaires, FAQ) + JSON-LD + llms.txt + sitemap
 tools/logo/               reconstruction du logo (fit.py → geo.py → build.py)
 tools/supabase/           le schéma de production du carnet de tickets (RLS, fonction de suivi)
-tools/render-assets.mjs   icônes d'appli et image de partage (Chrome sans tête, serveur local lancé)
+tools/render-assets.mjs   icônes d'appli, toile de l'ouverture (et sa miniature), image de partage (Chrome sans tête, serveur local lancé)
 tools/render-images.mjs   les images pré-rendues : les planches de l'enseigne, le décor de l'établi (idem)
 tools/capture.mjs         capture d'écran d'une page locale
 tools/set-pin.mjs         changer le code de l'atelier
@@ -116,8 +117,16 @@ osint/                    le dossier d'enquête (non publié) : osint/00-SYNTHES
 ```
 
 Après une modification des services, des horaires ou de la FAQ : `node tools/build-pages.mjs`.
-Icônes et image de partage (serveur local lancé) : `node tools/render-assets.mjs`.
+Icônes, toile de l'ouverture et image de partage (serveur local lancé) : `node tools/render-assets.mjs` — à relancer après une modification de la toile ou des cubes dans `js/co-splash.js` (l'image du fond doit rester celle du canevas).
 Après une modification du modèle de l'enseigne (`js/co-jordan.js`) ou du décor de l'établi (`js/co-outils.js`, `js/co-etabli.js`) : `node tools/render-images.mjs` (serveur local lancé ; `enseigne` ou `etabli` pour n'en refaire qu'un).
+
+## Le chargement
+
+Le premier état de l'écran est l'ouverture : un script dans le `<head>` décide si elle se joue (une fois par visite) et pose `html.ouverture` ; la toile de lacets est le fond de `#splash` (une image, `assets/img/lacis.webp`, rendue avec le code même de l'ouverture : le canevas la relaie sans que rien ne bouge), sur l'établi sombre, opaque. Les scripts sont listés dans un `<template id="scripts">` (estampillés par `tools/bump.mjs`) et exécutés dans l'ordre après la première image : l'appli se construit dessous, par étapes (`co-app.js` rend la main au navigateur entre deux modules). Une fois tout chargé, `CO.emit('coulisses')` (les préparations en temps mort peuvent commencer), la vague des cubes finit et « Entrer » paraît ; `CO.emit('ouverture')` au dévoilement.
+
+## La fluidité sur téléphone
+
+Rien ne se repeint au repos, et rien ne tourne hors de la vue : la devanture est une pile de calques (le grand SVG fixe, ce qui vit par-dessus dans de petits canevas ou sur le compositeur), l'atelier aussi (le décor peint une fois, la caméra en transform CSS, seuls Clément et ce qui bouge sont redessinés), les animations d'ambiance des éléments HTML sont jouées par le navigateur (`CO.ambiance`). Les calculs lourds (l'établi, les mains, les plans, la scène de l'atelier) se font par tranches de quelques millisecondes en temps mort, dès que l'appli est prête sous l'ouverture (`'coulisses'`), et se mettent en cache.
 
 ## À confirmer avec Clément
 

@@ -5,19 +5,24 @@
    presse bleue, la finisseuse rouge (SUR mini II), l'établi et son pied de fer, la machine à
    coudre, le coin des baskets, les clés ; et Clément qui va de l'un à l'autre, dans une grande
    boucle au hasard (js/co-clement.js le dessine, js/co-boutique-decor.js peint le décor).
-   Le canevas, en calques de profondeur (une vraie parallaxe : chaque calque a sa distance) :
-     plafond (poutres, peint à chaque image) → mur (une image) → machines (images) → Clément
-     → meubles devant lui → ses bras, ce qu'il tient → le comptoir du premier plan (planches en
-     perspective) et ses objets → la lumière (lampes, poussière, soir).
-   La caméra suit Clément (travelling, approche, bascule) ; à ~30 images/s, et plus rien du tout
-   quand la scène ne se voit pas (pause(), vue cachée, page cachée, hors écran) : sons coupés.
+   Des calques de profondeur empilés (une vraie parallaxe : chaque calque a sa distance) :
+     plafond (poutres) → mur (une image) → machines (images) → Clément → meubles devant lui →
+     ses bras, ce qu'il tient → la lumière (lampes, poussière) → le comptoir du premier plan
+     (planches en perspective) et ses objets → le soir.
+   Le décor peint une fois est déplacé par la caméra (transform CSS : le compositeur, rien ne se
+   repeint) ; seul ce qui bouge se peint à chaque image, dans des canevas à sa taille (voir « Les
+   calques » plus bas). La caméra suit Clément (travelling, approche, bascule) ; à ~30 images/s, et
+   plus rien du tout quand la scène ne se voit pas (pause(), vue cachée, page cachée, hors écran) :
+   sons coupés.
 
    À inclure après co-core.js (co-brand.js facultatif : le logo de l'imposte) :
      js/co-clement.js, js/co-boutique-decor.js, js/co-boutique.js (s'ils manquent, co-boutique.js
      charge lui-même les deux premiers, à côté de lui).
 
-   CO.Boutique.create(host, { nuit, graine }) → Promise<scène>   (nuit : sinon ?soir / ?nuit dans l'adresse)
-     La création peint le décor par tranches (pas de longue tâche) ; la scène est immobile jusqu'à jouer().
+   CO.Boutique.create(host, { nuit, graine, adaptatif }) → Promise<scène>   (nuit : sinon ?soir / ?nuit dans l'adresse ;
+     adaptatif : false fige la densité des calques, pour les captures)
+     La création peint le décor par tranches (pas de longue tâche ; en veille quand on touche ou fait
+     défiler l'écran) ; la scène est immobile jusqu'à jouer().
      scène.jouer() · pause() · reprise() · detruire()
      scène.entree({ ms }) · sortie({ ms }) · zoomEtabli({ ms }) · dezoom({ ms })      → Promise
      scène.on('clement' | 'cible' | 'activite', fn) → désabonnement ; 'cible' : 'radio', 'carnet',
@@ -39,6 +44,17 @@
     sin: (t) => -(Math.cos(Math.PI * t) - 1) / 2, out3: (t) => 1 - Math.pow(1 - t, 3), in3: (t) => t * t * t,
   };
   const ANNULE = { annule: true };
+  /** un dégradé fait une fois pour les mêmes points et les mêmes couleurs (un dégradé ne tient à aucun canevas : son
+      repère est celui du dessin qui le pose) ; fn : lin ou rad de co-boutique-decor.js */
+  function memoDegrade(fn) {
+    const m = new Map();
+    return (g, ...a) => {
+      const cle = a.map((v) => (Array.isArray(v) ? v.join(';') : v)).join('|');
+      let d = m.get(cle);
+      if (!d) { if (m.size > 600) m.clear(); d = fn(g, ...a); m.set(cle, d); }
+      return d;
+    };
+  }
 
   /* ---------- les deux compagnons (chargés d'ici si la page ne les a pas) ---------- */
   const ICI = (document.currentScript && document.currentScript.src) || '';
@@ -209,31 +225,39 @@
     preparerSons();
     const D = CO.BoutiqueDecor, K = D.D;
     const { C, STATIONS } = D;
-    const { rgba, lin, rad, rr, tache, toile, motif } = D.outils;
+    const { rgba, rr, toile } = D.outils;
+    // (les dégradés de la scène sont faits une fois : un dégradé ne tient à aucun canevas, son repère est celui du dessin)
+    const lin = memoDegrade(D.outils.lin), rad = memoDegrade(D.outils.rad);
+    /** une lueur ou une ombre douce (D.outils.tache, son dégradé fait une fois) */
+    const tache = (g, x, y, rx, ry, couleur, a) => {
+      g.save(); g.translate(x, y); g.scale(1, ry / rx);
+      g.fillStyle = rad(g, 0, 0, rx, [[0, rgba(couleur, a)], [0.5, rgba(couleur, a * 0.45)], [1, rgba(couleur, 0)]]);
+      g.beginPath(); g.arc(0, 0, rx, 0, TAU); g.fill();
+      g.restore();
+    };
     const FAM = police('--chiffres', 'sans-serif'), FAM_SANS = police('--sans', 'sans-serif');
     const graine = opts.graine == null ? 63 : opts.graine;
     const R = CO.rng(graine), RV = CO.rng(graine * 7 + 1); // le hasard (seedé) ; RV : la vie courante
     const reduit = !!CO.reduced;
     const VITESSE = +opts.vitesse || 1; // (tests : le temps accéléré)
 
-    /* ---------- le DOM : le canevas, les zones à toucher ---------- */
+    /* ---------- le DOM : les calques, les zones à toucher ---------- */
     const cs = getComputedStyle(host);
     if (cs.position === 'static') host.style.position = 'relative';
     host.style.overflow = 'hidden';
     const racine = document.createElement('div');
     racine.className = 'co-boutique';
-    racine.style.cssText = 'position:absolute;inset:0;overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:pan-y';
-    const cv = document.createElement('canvas');
-    cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block;touch-action:pan-y';
-    cv.setAttribute('aria-hidden', 'true');
-    racine.appendChild(cv);
+    // (son fond est opaque : les calques de lumière, posés en « écran » ou en « produit », ne se fondent qu'avec la scène ;
+    //  sans isolation, le compositeur n'a pas de passe de rendu de plus)
+    racine.style.cssText = 'position:absolute;inset:0;overflow:hidden;background:#1A130E;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:pan-y';
     const style = document.createElement('style');
-    style.textContent = '.co-boutique .cb-cible{position:absolute;left:0;top:0;margin:0;padding:0;border:0;background:transparent;cursor:pointer;touch-action:pan-y;-webkit-tap-highlight-color:transparent;border-radius:14px;outline:none}' +
+    // (les canevas gardent leur taille naturelle, celle de leurs px : la page leur impose max-width: 100%)
+    style.textContent = '.co-boutique .cb-c{position:absolute;left:0;top:0;display:block;max-width:none;max-height:none;transform-origin:0 0;pointer-events:none;will-change:transform}' +
+      '.co-boutique .cb-cible{position:absolute;left:0;top:0;margin:0;padding:0;border:0;background:transparent;cursor:pointer;touch-action:pan-y;-webkit-tap-highlight-color:transparent;border-radius:14px;outline:none}' +
       '.co-boutique .cb-cible:focus-visible{box-shadow:0 0 0 2px rgba(255,233,176,.9),0 0 0 5px rgba(43,36,32,.5)}' +
       '.co-boutique .cb-cible[hidden]{display:none}';
     racine.appendChild(style);
     host.appendChild(racine);
-    const ctx = cv.getContext('2d');
 
     /* ---------- les mesures, la caméra ---------- */
     let W = 0, H = 0, dpr = 1, s0 = 1, Yh0 = 0;
@@ -242,7 +266,6 @@
       const r = host.getBoundingClientRect();
       W = Math.max(1, r.width); H = Math.max(1, r.height);
       dpr = Math.min(window.devicePixelRatio || 1, opts.dpr || 2);
-      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
       s0 = Math.min(W / K.VUE, H / 330);
       Yh0 = 0.8 * H - (K.OEIL - K.HAUT_COMPTOIR) * s0 * (K.D_LANE / K.D_COMPTOIR);
     }
@@ -252,82 +275,240 @@
     const Yh = () => Yh0 - cam.tilt * H;
     /** un point du monde (x, y) à la profondeur d → px dans l'hôte */
     function ecran(x, y, d = K.D_LANE) { const s = s0 * sig(d); return [W / 2 + (x - cam.x) * s, Yh() + (y + K.OEIL) * s]; }
-    /** le repère du monde au plan d, pour dessiner en cm */
-    function repere(d = K.D_LANE) {
-      const s = s0 * sig(d);
-      ctx.setTransform(s * dpr, 0, 0, s * dpr, (W / 2 - cam.x * s) * dpr, (Yh() + K.OEIL * s) * dpr);
-    }
     /** quelle abscisse la caméra doit viser pour qu'un point x du plan de Clément soit au centre */
     const bornesCam = (d) => { const demi = W / 2 / (s0 * K.D_LANE / Math.max(14, K.D_LANE - d)); return [K.MONDE.x0 + demi + 4, K.MONDE.x1 - demi - 4]; };
+
+    /* ======================================================================
+       Les calques, empilés dans l'ordre où se peignait l'image : le plafond ; le mur et ses images ; les lampes, la
+       presse, la finisseuse ; leurs pièces qui bougent ; Clément ; les meubles devant lui ; les objets posés ; ses bras,
+       ce qu'il tient, la poussière ; la lumière des lampes ; le comptoir et ses objets ; le soir ; le vignettage ; la vitre.
+       - Les images du décor (peintes une fois) sont posées dans des plans (des div) que la caméra déplace et met à
+         l'échelle (transform) : le compositeur s'en charge, rien ne se repeint.
+       - Ce qui bouge sans cesse (Clément, ses bras, la poussière qui flotte) se peint à chaque image, dans des canevas
+         de la taille de sa zone.
+       - Le reste (les pièces des machines, les objets posés, la lumière, le comptoir, le soir) ne se repeint que quand il
+         change, ou quand la caméra l'a trop agrandi ou trop déplacé ; entre deux, il glisse avec elle.
+       La lumière des lampes et le soir se posent comme avant (écran, produit) : mix-blend-mode, sur le fond opaque de la racine.
+       La densité (px par px CSS) : ≤ 2 ; les calques flous ou lents à peindre, moins ; tout baisse si les images traînent.
+       ====================================================================== */
+    const CANEVAS = new Set(); // les canevas des calques (pour compter leur mémoire)
+    function calque(tag = 'canvas', css = '') {
+      const e = document.createElement(tag);
+      e.className = 'cb-c';
+      if (css) e.style.cssText = css;
+      e.setAttribute('aria-hidden', 'true');
+      if (tag === 'canvas') { e.width = e.height = 0; CANEVAS.add(e); }
+      racine.appendChild(e);
+      return e;
+    }
+    const montrer = (e, on) => { if (e._vu !== on) { e._vu = on; e.style.visibility = on ? '' : 'hidden'; } };
+    const opacite = (e, a) => { const v = a >= 0.9995 ? '' : a.toFixed(3); if (e._op !== v) { e._op = v; e.style.opacity = v; } };
+    const mat = (a, d, e, f) => `matrix(${a.toFixed(6)},0,0,${d.toFixed(6)},${e.toFixed(3)},${f.toFixed(3)})`;
+    const poserTf = (o, tf) => { if (o.tf !== tf) { o.tf = tf; o.c.style.transform = tf; } };
+    const etendre = (b, x0, y0, x1, y1) => (b ? [Math.min(b[0], x0), Math.min(b[1], y0), Math.max(b[2], x1), Math.max(b[3], y1)] : [x0, y0, x1, y1]);
+    const unir = (a, b) => (!a ? b : !b ? a : etendre(a, b[0], b[1], b[2], b[3]));
+    // la densité adaptative (image() la règle) : les calques vifs (Clément, les objets), les calques flous (la lumière)
+    let qVive = 1, qFloue = 1;
+    const densite = (q) => Math.max(Math.min(1, dpr), dpr * q); // (jamais sous 1 px par px CSS, sauf écran plus grossier)
+    /** un canevas assez grand pour bw × bh px (avec du jeu) ; rendu à la mémoire quand il est un moment bien trop grand */
+    function dimensionner(o, bw, bh, maxW, maxH) {
+      const c = o.c, assez = bw <= c.width && bh <= c.height;
+      if (assez && c.width * c.height <= 1.8 * bw * bh + 8192) { o.trop = 0; return false; }
+      if (assez && ++o.trop < 45) return false;
+      c.width = Math.max(bw, Math.min(maxW, Math.ceil(bw * 1.08 / 16) * 16));
+      c.height = Math.max(bh, Math.min(maxH, Math.ceil(bh * 1.08 / 16) * 16));
+      o.trop = 0; o.bw = o.bh = 0;
+      return true;
+    }
+
+    /* ---------- les zones : ce qui bouge sans cesse, peint à chaque image là où il est ---------- */
+    function zone(css) { return { c: calque('canvas', css), g: null, dens: 1, x0: 0, y0: 0, bw: 0, bh: 0, tf: '', trop: 0, vide: 0 }; }
+    /** prépare la zone r = [x0, y0, x1, y1] (px de l'hôte) pour l'image : sa taille, l'effacement, sa place ; false si vide */
+    function ouvrir(Z, r, dens) {
+      const g = Z.g || (Z.g = Z.c.getContext('2d'));
+      let x0 = 0, y0 = 0, bw = 0, bh = 0;
+      if (r) {
+        // (calée sur la grille des px du canevas : un dessin net, comme sur l'ancien grand canevas)
+        x0 = Math.floor(Math.max(0, r[0]) * dens) / dens; y0 = Math.floor(Math.max(0, r[1]) * dens) / dens;
+        bw = Math.ceil(Math.min(W, r[2]) * dens) - Math.round(x0 * dens); bh = Math.ceil(Math.min(H, r[3]) * dens) - Math.round(y0 * dens);
+      }
+      if (bw <= 0 || bh <= 0) {
+        if (Z.bw) { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, Z.bw, Z.bh); Z.bw = Z.bh = 0; }
+        montrer(Z.c, false);
+        if (Z.c.width && ++Z.vide > 60) Z.c.width = Z.c.height = 0; // (vide depuis deux secondes : sa mémoire rendue)
+        return false;
+      }
+      Z.vide = 0;
+      if (dens !== Z.dens) { Z.dens = dens; Z.c.width = Z.c.height = 0; }
+      dimensionner(Z, bw, bh, Math.ceil(W * dens) + 2, Math.ceil(H * dens) + 2);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      // (tout le canevas : ce qu'on dessine déborde parfois de la zone, hors de l'écran ; rien ne doit en rester)
+      g.clearRect(0, 0, Z.c.width, Z.c.height);
+      Z.bw = bw; Z.bh = bh; Z.x0 = x0; Z.y0 = y0;
+      poserTf(Z, mat(1 / dens, 1 / dens, x0, y0));
+      montrer(Z.c, true);
+      return true;
+    }
+    /** le repère du monde au plan d, sur une zone (pour dessiner en cm) */
+    function repereZone(Z, d = K.D_LANE) {
+      const s = s0 * sig(d), k = Z.dens;
+      Z.g.setTransform(s * k, 0, 0, s * k, (W / 2 - cam.x * s - Z.x0) * k, (Yh() + K.OEIL * s - Z.y0) * k);
+    }
+    /** une boîte du monde (au plan d) → px de l'hôte, avec la marge de l'antialiasing */
+    function zoneEcran(b, d = K.D_LANE) {
+      if (!b) return null;
+      const s = s0 * sig(d), Y = Yh();
+      return [W / 2 + (b[0] - cam.x) * s - 2, Y + (b[1] + K.OEIL) * s - 2, W / 2 + (b[2] - cam.x) * s + 2, Y + (b[3] + K.OEIL) * s + 2];
+    }
+
+    /* ---------- les couches : peintes au plan d (le monde, en cm), repeintes seulement quand il le faut ---------- */
+    function couche(o) { return Object.assign({ c: calque('canvas', o.css), g: null, q: 1, net: true, marge: 0.12, sig: '', R: null, tf: '', trop: 0, bw: 0, bh: 0, sale: true, cachee: 0 }, o); }
+    const frac = (v) => Math.abs(v - Math.round(v));
+    /** pose (et repeint s'il le faut) la couche L : son contenu a changé (signature), la caméra l'a trop agrandi, on sort de
+        la partie peinte, ou (écran dont la densité est celle du canevas) un décalage d'une fraction de px l'adoucirait */
+    function majCouche(L) {
+      const s = s0 * sig(L.d), Y = Yh();
+      const B = L.visible && !L.visible() ? null : L.bornes();
+      const vx0 = cam.x - W / 2 / s, vx1 = cam.x + W / 2 / s, vy0 = -Y / s - K.OEIL, vy1 = (H - Y) / s - K.OEIL;
+      if (!B || Math.min(vx1, B[2]) <= Math.max(vx0, B[0]) || Math.min(vy1, B[3]) <= Math.max(vy0, B[1])) {
+        montrer(L.c, false);
+        if (L.c.width && ++L.cachee > 60) { L.c.width = L.c.height = 0; L.bw = L.bh = 0; L.R = null; } // (cachée depuis deux secondes : sa mémoire rendue)
+        return;
+      }
+      L.cachee = 0;
+      const dens = densite(L.q * (L.net ? qVive : qFloue));
+      const sg = L.signature ? L.signature() : '';
+      const r0 = L.R;
+      let refaire = L.sale || !r0 || sg !== L.sig || r0.dens !== dens || Math.abs(s / r0.s - 1) > (L.net ? 0.01 : 0.04) ||
+        Math.max(vx0, B[0]) < r0.x0 || Math.min(vx1, B[2]) > r0.x1 || Math.max(vy0, B[1]) < r0.y0 || Math.min(vy1, B[3]) > r0.y1;
+      for (let passe = 0; passe < 2; passe++) {
+        if (refaire) {
+          // la fenêtre peinte : ce qu'on voit, avec de la marge (la caméra peut glisser sans repeindre), dans la boîte du contenu
+          const mx = (vx1 - vx0) * L.marge, my = (vy1 - vy0) * L.marge;
+          const x0 = Math.max(B[0], vx0 - mx), x1 = Math.min(B[2], vx1 + mx), y0 = Math.max(B[1], vy0 - my), y1 = Math.min(B[3], vy1 + my);
+          const Xa = Math.floor((W / 2 + (x0 - cam.x) * s) * dens) / dens, Ya = Math.floor((Y + (y0 + K.OEIL) * s) * dens) / dens;
+          const bw = Math.ceil((W / 2 + (x1 - cam.x) * s - Xa) * dens) + 1, bh = Math.ceil((Y + (y1 + K.OEIL) * s - Ya) * dens) + 1;
+          const g = L.g || (L.g = L.c.getContext('2d'));
+          if (!r0 || r0.dens !== dens) L.c.width = L.c.height = 0;
+          dimensionner(L, bw, bh, bw * 2, bh * 2);
+          g.setTransform(1, 0, 0, 1, 0, 0);
+          g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+          g.clearRect(0, 0, L.c.width, L.c.height); // (tout : le dessin déborde de la fenêtre)
+          L.bw = bw; L.bh = bh;
+          g.setTransform(s * dens, 0, 0, s * dens, (W / 2 - cam.x * s - Xa) * dens, (Y + K.OEIL * s - Ya) * dens);
+          g.lineCap = 'round'; // (l'état qu'avait le grand canevas à ce moment de l'image)
+          L.peindre(g, s);
+          L.R = { s, cx: cam.x, Y, Xa, Ya, x0, x1, y0, y1, dens };
+          L.sig = sg; L.sale = false;
+        }
+        // la transformation : px de la couche → px de l'hôte
+        const R2 = L.R, k = s / R2.s;
+        const tx = W / 2 - cam.x * s + k * (R2.Xa - W / 2 + R2.cx * R2.s), ty = Y + K.OEIL * s + k * (R2.Ya - R2.Y - K.OEIL * R2.s);
+        if (!refaire && L.net && Math.abs((window.devicePixelRatio || 1) - dens) < 0.01 && (frac(tx * dens) > 0.3 || frac(ty * dens) > 0.3)) { refaire = true; continue; }
+        poserTf(L, mat(k / dens, k / dens, tx, ty));
+        break;
+      }
+      montrer(L.c, true);
+    }
+
+    /* ---------- les plans : les images du décor à la profondeur d (leur repère : le monde, en cm) ---------- */
+    function plan(d, noms) { return { d, noms, c: calque('div'), tf: '' }; }
+    function poserPlan(P) { const s = s0 * sig(P.d); poserTf(P, mat(s, s, W / 2 - cam.x * s, Yh() + K.OEIL * s)); }
+    /** les images (peintes) prennent leur place dans leur plan, dans l'ordre */
+    function accrocher(P) {
+      P.c.replaceChildren(...P.noms.map((n) => SP[n]).filter(Boolean).map((sp) => {
+        const c = sp.c;
+        c.className = 'cb-c';
+        c.setAttribute('aria-hidden', 'true');
+        c.style.transform = mat(sp.w / c.width, sp.h / c.height, sp.x, sp.y);
+        return c;
+      }));
+    }
 
     /* ---------- les images du décor (peintes une fois, à la bonne résolution) ---------- */
     const SP = {};
     let fileSprites = null; // quand elle existe : les images à peindre plus tard, par tranches
     const TEMPS_SPRITE = {};
     function sprite(nom, x, y, w, h, q, peindre) {
-      if (fileSprites) { fileSprites.push(() => sprite(nom, x, y, w, h, q, peindre)); return null; }
+      if (fileSprites) { const f = () => sprite(nom, x, y, w, h, q, peindre); f.nom = nom; fileSprites.push(f); return null; }
       const t0 = performance.now();
       const Rz = s0 * dpr * q;
       const c = toile(w * Rz, h * Rz), g = c.getContext('2d');
       g.setTransform(Rz, 0, 0, Rz, -x * Rz, -y * Rz);
       const r = peindre(g);
-      // (Chrome enregistre les dessins et ne les pixellise qu'au premier usage : on force la pixellisation
-      //  ici, par tranches, plutôt qu'à la première image, qui figerait tout d'un coup)
-      const pixelliser = () => { try { petit().drawImage(c, 0, 0, 1, 1); } catch (e) { /* rien */ } };
-      const fin = () => { if (pasAPas) pixelliser(); TEMPS_SPRITE[nom] = Math.round(performance.now() - t0); return (SP[nom] = { c, x, y, w, h }); };
+      const fin = () => { if (pasAPas) pixelliser(c); TEMPS_SPRITE[nom] = Math.round(performance.now() - t0); return (SP[nom] = { c, x, y, w, h }); };
       if (r && typeof r.next === 'function') { // un peintre pas à pas (générateur)
-        if (pasAPas) return { iter: r, fin, pixelliser };
+        if (pasAPas) return { iter: r, fin, pixelliser: () => pixelliser(c) };
         while (!r.next().done);
       }
       return fin();
     }
     let pasAPas = false, petitCtx = null;
-    const petit = () => petitCtx || (petitCtx = toile(1, 1).getContext('2d'));
-    /** tout peindre, en rendant la main entre deux images (pas de longue tâche qui fige l'accueil) */
-    async function peindreToutDoucement(abandon = () => false) {
+    const petit = () => petitCtx || (petitCtx = toile(256, 256).getContext('2d'));
+    /** (Chrome enregistre les dessins et ne les pixellise qu'au premier usage : on force la pixellisation au fil de la
+        préparation, par tranches, plutôt qu'à la première image ; la copie va à un canevas accéléré : rien ne se relit) */
+    function pixelliser(c) { try { petit().drawImage(c, 0, 0, 1, 1); } catch (e) { /* rien */ } }
+    // la préparation se met en veille quand on touche ou qu'on fait défiler l'écran, et pendant l'ouverture aux lacets
+    let finOccupe = 0, nPrepa = 0;
+    const EV_OCCUPE = ['pointerdown', 'pointermove', 'touchstart', 'touchmove', 'wheel', 'scroll', 'keydown'];
+    const toucher = (e) => { if (e.type !== 'pointermove' || e.buttons) finOccupe = performance.now() + 450; };
+    const occupe = () => performance.now() < finOccupe || !!document.querySelector('#splash.lance');
+    if (CO.on) CO.on('ouverture', () => { finOccupe = Math.max(finOccupe, performance.now() + 900); }); // (le dévoilement de l'appli)
+    /** rendre la main jusqu'à un moment calme ; → le temps qu'on peut prendre (ms) avant de la rendre encore */
+    async function repos() {
+      for (let k = 0; ; k++) {
+        const libre = await new Promise((r) => (window.requestIdleCallback ? requestIdleCallback((dl) => r(dl.timeRemaining()), { timeout: 250 }) : setTimeout(() => r(8), 16)));
+        if (mort || vueOk) return 20; // (la scène est attendue : de plus grandes tranches)
+        if (!occupe() || k > 60) return clamp(libre, 5, 12);
+      }
+    }
+    /** tout peindre, en rendant la main entre deux pas (jamais de longue tâche : l'accueil reste fluide) */
+    const TRANCHES = {}; // (le labo) le plus long pas de chaque préparation, en ms
+    async function peindreToutDoucement(abandon = () => false, suite = []) {
       fileSprites = [];
       peindreTout();
-      const file = [() => ({ iter: D.prechauffer(), fin() {} }), () => ({ iter: CO.Clement.prechauffer(), fin() {} })].concat(fileSprites);
+      const tex = () => ({ iter: D.prechauffer(), fin() {} }), texC = () => ({ iter: CO.Clement.prechauffer(), fin() {} });
+      tex.nom = 'textures'; texC.nom = 'textures Clément';
+      const file = [tex, texC].concat(fileSprites, suite);
       fileSprites = null;
-      const repos = () => new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(r, { timeout: 120 }) : setTimeout(r, 16)));
-      let t = performance.now();
+      if (!nPrepa++) EV_OCCUPE.forEach((t) => window.addEventListener(t, toucher, { capture: true, passive: true }));
       pasAPas = true;
+      const noter = (nom, t0) => { const dt = Math.round(performance.now() - t0); if (!(TRANCHES[nom] >= dt)) TRANCHES[nom] = dt; };
       try {
+        let budget = await repos(), t = performance.now();
         for (const f of file) {
-          if (abandon()) return;
+          if (abandon()) return false;
+          let t0 = performance.now();
           const r = f();
+          noter(f.nom || '?', t0);
           if (r && r.iter) {
-            while (!r.iter.next().done) {
-              if (r.pixelliser) r.pixelliser();
-              if (performance.now() - t > 24) { await repos(); t = performance.now(); }
+            for (;;) {
+              t0 = performance.now();
+              const fini = r.iter.next().done;
+              if (!fini && r.pixelliser) r.pixelliser();
+              noter(f.nom || '?', t0);
+              if (fini) break;
+              if (performance.now() - t > budget) { budget = await repos(); t = performance.now(); if (abandon()) return false; }
             }
+            t0 = performance.now();
             r.fin();
+            noter(f.nom || '?', t0);
           }
-          if (performance.now() - t > 24) { await repos(); t = performance.now(); }
+          if (performance.now() - t > budget) { budget = await repos(); t = performance.now(); }
         }
-      } finally { pasAPas = false; }
-    }
-    function poser(sp, d, alpha = 1) {
-      if (!sp) return;
-      const s = s0 * sig(d);
-      let X = W / 2 + (sp.x - cam.x) * s, Y = Yh() + (sp.y + K.OEIL) * s, Wd = sp.w * s, Hd = sp.h * s;
-      // on ne copie que la partie visible (le mur est grand)
-      const x0 = Math.max(0, X), y0 = Math.max(0, Y), x1 = Math.min(W, X + Wd), y1 = Math.min(H, Y + Hd);
-      if (x1 <= x0 || y1 <= y0) return;
-      const kx = sp.c.width / Wd, ky = sp.c.height / Hd;
-      // (la source strictement dans l'image : Safari n'en dessine rien sinon)
-      const sx = clamp((x0 - X) * kx, 0, sp.c.width), sy = clamp((y0 - Y) * ky, 0, sp.c.height);
-      const sw = Math.min(sp.c.width - sx, (x1 - x0) * kx), sh = Math.min(sp.c.height - sy, (y1 - y0) * ky);
-      if (sw < 0.5 || sh < 0.5) return;
-      ctx.globalAlpha = alpha;
-      ctx.drawImage(sp.c, sx, sy, sw, sh, x0 * dpr, y0 * dpr, (x1 - x0) * dpr, (y1 - y0) * dpr);
-      ctx.globalAlpha = 1;
+      } finally {
+        pasAPas = false;
+        if (!--nPrepa) EV_OCCUPE.forEach((t) => window.removeEventListener(t, toucher, { capture: true }));
+      }
+      return true;
     }
     const LAMPES = [
       { x: 48, y: -226, c: '#232323', l: 16 }, { x: 166, y: -224, c: '#232323', l: 18 }, { x: 303, y: -198, c: '#2F5A47', l: 22 },
       { x: 412, y: -222, c: '#232323', l: 17 }, { x: 540, y: -216, c: '#6B4A33', l: 20 },
     ];
     let nuit = opts.nuit != null ? !!opts.nuit : /[?&](soir|nuit)(=|&|$)/.test(location.search);
+    const porte = (soir) => sprite(soir ? 'porteNuit' : 'porteJour', 650, -238, 64, 240, 0.9, (g) => D.peindrePorte(g, 660, -232, 46, 232, soir, FAM));
     function peindreTout() {
       const rr2 = CO.rng(graine + 5);
       sprite('mur', -60, -300, 820, 302, 0.72, function* (g) {
@@ -335,23 +516,28 @@
         D.peindreClim(g, 24, -262);
         D.planche(g, 128, -190, 60);
         D.basket(g, 132, -190, 17, D.PAIRES[0]); D.basket(g, 151, -190, 17, D.PAIRES[5]); D.basket(g, 170, -190, 16, D.PAIRES[1]);
+        yield;
         D.peindreArmoire(g, 256, -208);
         D.planche(g, 300, -216, 150);
         let px = 304;
         [3, 8, 4, 0, 6, 2, 7].forEach((k) => { D.basket(g, px, -216, 17 + rr2() * 2, D.PAIRES[k]); px += 20.5; });
+        yield;
         D.peindreRatelier(g, 262, -152, 84);
         D.peindrePolaroids(g, 354, -178, rr2);
+        yield;
         D.peindrePendule(g, 470, -188, FAM);
         D.peindreCles(g, 510, -176, 40, 46);
+        yield;
         D.peindreEtageres(g, 572, -212, 66, rr2);
         D.peindreSac(g, 648, -182);
       });
       SP.small = null;
       sprite('small', 196, -250, 70, 90, 0.9, (g) => D.peindreSmall(g, 234, -206, false, FAM));
-      sprite('porteJour', 650, -238, 64, 240, 0.9, (g) => D.peindrePorte(g, 660, -232, 46, 232, false, FAM));
-      sprite('porteNuit', 650, -238, 64, 240, 0.9, (g) => D.peindrePorte(g, 660, -232, 46, 232, true, FAM));
+      // (la porte du jour ou celle du soir : l'autre se peint si l'on passe de l'un à l'autre)
+      SP.porteJour = SP.porteNuit = null;
+      porte(nuit);
       sprite('presse', 2, -200, 92, 204, 1.35, (g) => D.peindrePresse(g));
-      sprite('finisseuse', 88, -236, 148, 240, 1.35, (g) => D.peindreFinisseuse(g, FAM));
+      sprite('finisseuse', 88, -236, 148, 240, 1.35, (g) => D.peindreFinisseusePas(g, FAM));
       sprite('etabli', 244, -128, 118, 130, 1.6, (g) => D.peindreEtabli(g, FAM));
       sprite('couture', 366, -142, 92, 144, 1.4, (g) => D.peindreCouture(g));
       sprite('nettoyage', 460, -122, 68, 124, 1.4, (g) => D.peindreNettoyage(g));
@@ -381,77 +567,170 @@
     const PREMIER_PLAN = ['p-souMain', 'p-plateau', 'p-liasse', 'p-cire'];
     const D_PREMIER = 150;
 
-    /* ---------- le plafond (poutres en perspective, à chaque image) ---------- */
+    /* ---------- les dégradés faits une fois, dans un repère unité (chaque dessin les pose à sa place) ---------- */
+    const DEG = {};
+    const degV = (nom, stops) => DEG[nom] || (DEG[nom] = lin(petit(), 0, 0, 0, 1, stops)); // de (0, 0) à (0, 1)
+    const degR = (nom, stops) => DEG[nom] || (DEG[nom] = rad(petit(), 0, 0, 1, stops)); // centre (0, 0), rayon 1
+    /** remplit le rectangle (x, y, w, h) avec le dégradé unité posé en (ox, oy) à l'échelle (kx, ky) : comme le dégradé
+        de (ox, oy) à (ox, oy + ky) (vertical), ou centré en (ox, oy) de rayon kx (radial) */
+    function rectDeg(g, deg, ox, oy, kx, ky, x, y, w, h) {
+      if (!(Math.abs(kx) > 1e-9 && Math.abs(ky) > 1e-9)) return; // (un dégradé de longueur nulle ne peint rien)
+      g.save();
+      g.transform(kx, 0, 0, ky, ox, oy);
+      g.fillStyle = deg;
+      g.fillRect((x - ox) / kx, (y - oy) / ky, w / kx, h / ky);
+      g.restore();
+    }
+
+    /* ---------- les calques, de l'arrière à l'avant ---------- */
+    const L_PLAFOND = { c: calque(), cle: '', tf: '', trop: 0, bw: 0, bh: 0, vide: 0 };
+    const P_MUR = plan(K.D_MUR, ['mur', 'porteJour', 'porteNuit', 'small']);
+    const L_AIGUILLES = couche({ d: K.D_MUR, marge: 0.1, bornes: () => [460, -198, 480, -178], signature: sigAiguilles, peindre: peindreAiguilles });
+    const P_FOND = plan(K.D_LANE, ['lampe0', 'lampe1', 'lampe2', 'lampe3', 'lampe4', 'presse', 'finisseuse']);
+    const L_MACHINES = couche({ d: K.D_LANE, bornes: bornesMachines, signature: sigMachines, peindre: peindreMachines });
+    const Z_CORPS = zone();
+    const P_MEUBLES = plan(K.D_LANE, ['etabli', 'couture', 'nettoyage', 'cles']);
+    const L_TABLE = couche({ d: K.D_LANE, bornes: bornesTable, signature: sigTable, peindre: peindreTable });
+    const Z_DEVANT = zone();
+    const L_LUMIERE = couche({ d: K.D_LANE, css: 'mix-blend-mode:screen', q: 0.5, net: false, marge: 0.15, bornes: () => bornesLumiere(false), signature: () => nuitK.toFixed(4), peindre: (g) => peindreCones(g, false) });
+    const L_LUMIERE540 = couche({ d: K.D_LANE, css: 'mix-blend-mode:screen', q: 0.5, net: false, marge: 0.15, bornes: () => bornesLumiere(true), signature: () => nuitK.toFixed(4), peindre: (g) => peindreCones(g, true) });
+    const Z_MOUTES = zone('mix-blend-mode:screen');
+    const L_COMPTOIR = { c: calque(), g: null, R: null, tf: '', trop: 0, bw: 0, bh: 0, motif: null, vide: 0 };
+    const P_OBJETS = plan(K.D_OBJETS, OBJETS_COMPTOIR);
+    const P_PREMIER = plan(D_PREMIER, PREMIER_PLAN);
+    const L_SOIR = { c: calque('canvas', 'mix-blend-mode:multiply'), cle: '', tf: '' };
+    const L_SOIR_HALOS = couche({ d: K.D_LANE, css: 'mix-blend-mode:screen', q: 0.5, net: false, visible: () => nuitK > 0.001, bornes: () => bornesHalos(), peindre: peindreHalosSoir });
+    const L_RADIO = couche({ d: K.D_OBJETS, css: 'mix-blend-mode:screen', visible: () => !!(CO.sfx && CO.sfx.on), bornes: bornesRadio, peindre: peindreRadioLueur });
+    const L_RADIO_AIGUILLE = couche({ d: K.D_OBJETS, marge: 0.1, visible: () => !!(CO.sfx && CO.sfx.on), bornes: bornesRadio, signature: () => aiguilleRadio().toFixed(2), peindre: peindreRadioAiguille });
+    const L_SMALL = couche({ d: K.D_MUR, css: 'mix-blend-mode:screen', q: 0.5, net: false, visible: () => nuitK > 0.02, bornes: () => [190, -250, 278, -162], peindre: peindreSmallVive });
+    const L_VIGNETTE = { c: calque(), cle: '', tf: '' };
+    const L_INDICE = { c: calque('canvas', 'mix-blend-mode:screen'), r: 0, dens: 0, tf: '' };
+    const L_VITRE = { c: calque(), g: null, tf: '', trop: 0, bw: 0, bh: 0 };
+    // (leurs noms, pour le labo et les mesures)
+    const CALQUES = { plafond: L_PLAFOND, mur: P_MUR, aiguilles: L_AIGUILLES, fond: P_FOND, machines: L_MACHINES, corps: Z_CORPS, meubles: P_MEUBLES, table: L_TABLE, devant: Z_DEVANT,
+      lumiere: L_LUMIERE, lumiere540: L_LUMIERE540, moutes: Z_MOUTES, comptoir: L_COMPTOIR, objets: P_OBJETS, premier: P_PREMIER, soir: L_SOIR, halos: L_SOIR_HALOS,
+      radio: L_RADIO, aiguilleRadio: L_RADIO_AIGUILLE, small: L_SMALL, vignette: L_VIGNETTE, indice: L_INDICE, vitre: L_VITRE };
+    Object.entries(CALQUES).forEach(([n, L]) => { L.c.dataset.calque = n; });
+
+    /* ---------- le plafond (poutres en perspective) : peint quand on le voit (une bande en haut, rarement) ---------- */
     const POUTRES = [305, 280, 255, 230, 205, 180, 155];
-    function peindrePlafond() {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const yP = (d, y) => Yh() + (y + K.OEIL) * s0 * sig(d);
-      const yMur = yP(K.D_MUR, -290);
-      if (yMur <= 0) return;
-      ctx.fillStyle = lin(ctx, 0, 0, 0, yMur, [[0, '#18110C'], [1, '#2E2119']]);
-      ctx.fillRect(0, 0, W, yMur + 1);
+    const yPl = (d, y) => Yh() + (y + K.OEIL) * s0 * sig(d);
+    function majPlafond() {
+      const L = L_PLAFOND, yMur = yPl(K.D_MUR, -290);
+      if (yMur <= 0) { montrer(L.c, false); if (L.c.width && ++L.vide > 60) { L.c.width = L.c.height = 0; L.bw = L.bh = 0; L.cle = ''; } return; }
+      L.vide = 0;
+      const cle = [cam.x, cam.d, cam.tilt, W, H, dpr, qVive].join(',');
+      if (cle !== L.cle) {
+        L.cle = cle;
+        // (jusqu'au bas des poutres : le mur, devant, cache ce qui dépasse)
+        let bas = yMur + 1;
+        POUTRES.forEach((d) => { if (d - cam.d < 20) return; const yb = yPl(d - 6, -276), yh = yPl(d - 6, -290), yl = yPl(d + 6, -276); if (yh > H || yb < -40) return; bas = Math.max(bas, yb + 0.5, yl + 0.5); });
+        const dens = densite(qVive), bw = Math.ceil(W * dens), bh = Math.ceil(Math.min(H, bas) * dens) + 1;
+        const g = L.g || (L.g = L.c.getContext('2d'));
+        if (L.dens !== dens) { L.dens = dens; L.c.width = L.c.height = 0; }
+        dimensionner(L, bw, bh, bw, Math.ceil(H * dens) + 2);
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, L.c.width, L.c.height);
+        g.setTransform(dens, 0, 0, dens, 0, 0);
+        peindrePlafond(g, yMur);
+        poserTf(L, mat(1 / dens, 1 / dens, 0, 0));
+      }
+      montrer(L.c, true);
+    }
+    function peindrePlafond(g, yMur) {
+      rectDeg(g, degV('plafond', [[0, '#18110C'], [1, '#2E2119']]), 0, 0, 1, yMur, 0, 0, W, yMur + 1);
       POUTRES.forEach((d) => {
         if (d - cam.d < 20) return;
-        const yb = yP(d - 6, -276), yh = yP(d - 6, -290), yl = yP(d + 6, -276);
+        const yb = yPl(d - 6, -276), yh = yPl(d - 6, -290), yl = yPl(d + 6, -276);
         if (yh > H || yb < -40) return;
         // le dessous de la poutre (éclairé par les lampes), sa face
-        ctx.fillStyle = lin(ctx, 0, yb, 0, yl, [[0, '#5A4230'], [1, '#3E2C20']]);
-        ctx.fillRect(0, Math.min(yb, yl), W, Math.abs(yl - yb) + 0.5);
-        ctx.fillStyle = lin(ctx, 0, yh, 0, yb, [[0, '#2A1D14'], [1, '#4A3526']]);
-        ctx.fillRect(0, yh, W, yb - yh + 0.5);
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.fillRect(0, yh, W, 1);
+        rectDeg(g, degV('poutreDessous', [[0, '#5A4230'], [1, '#3E2C20']]), 0, yb, 1, yl - yb, 0, Math.min(yb, yl), W, Math.abs(yl - yb) + 0.5);
+        rectDeg(g, degV('poutreFace', [[0, '#2A1D14'], [1, '#4A3526']]), 0, yh, 1, yb - yh, 0, yh, W, yb - yh + 0.5);
+        g.fillStyle = 'rgba(0,0,0,0.35)';
+        g.fillRect(0, yh, W, 1);
       });
       // la lumière des lampes sur le plafond
-      ctx.globalCompositeOperation = 'screen';
+      g.globalCompositeOperation = 'screen';
       LAMPES.forEach((L) => {
         const [x, y] = ecran(L.x, L.y - 60);
         if (x < -200 || x > W + 200) return;
-        ctx.fillStyle = rad(ctx, x, y, 120 * s0 / 2.3, [[0, 'rgba(255,190,120,0.16)'], [1, 'rgba(255,190,120,0)']]);
-        ctx.fillRect(x - 200, 0, 400, yMur);
+        const r = 120 * s0 / 2.3;
+        rectDeg(g, degR('plafondLampe', [[0, 'rgba(255,190,120,0.16)'], [1, 'rgba(255,190,120,0)']]), x, y, r, r, x - 200, 0, 400, yMur);
       });
-      ctx.globalCompositeOperation = 'source-over';
+      g.globalCompositeOperation = 'source-over';
     }
 
-    /* ---------- le comptoir du premier plan : des planches en perspective ---------- */
-    function peindreComptoir() {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const hc = K.HAUT_COMPTOIR;
-      const yP = (d) => Yh() + (K.OEIL - hc) * s0 * sig(d);
+    /* ---------- le comptoir du premier plan : des planches en perspective. Un calque repeint quand la caméra a assez
+       bougé pour que ça se voie (un quart de px) ; entre deux, il glisse avec elle ---------- */
+    const MX_COMPTOIR = 10, BAS_COMPTOIR = 3; // les marges peintes (px CSS) : à gauche et à droite, sous le bas de l'écran
+    const yComptoir = (d) => Yh() + (K.OEIL - K.HAUT_COMPTOIR) * s0 * sig(d);
+    function majComptoir() {
+      const L = L_COMPTOIR, Y = Yh(), yFond = yComptoir(K.D_COMPTOIR);
+      if (yFond > H) { montrer(L.c, false); if (L.c.width && ++L.vide > 60) { L.c.width = L.c.height = 0; L.bw = L.bh = 0; L.R = null; } return; }
+      L.vide = 0;
+      const dens = densite(qVive), r0 = L.R;
+      let refaire = !r0 || r0.W !== W || r0.H !== H || r0.nuit !== nuit || r0.dens !== dens || Math.abs(cam.d - r0.d) > 0.04 || Math.abs(Y - r0.Y) > 1.5;
+      if (!refaire) {
+        const dx = cam.x - r0.cx;
+        // (chaque planche glisse à sa vitesse : l'écart entre la plus lente et la plus rapide reste sous ~¼ de px)
+        if (Math.abs(dx) * (r0.sMax - r0.sMin) * 0.5 * dens > 0.25 || Math.abs(dx * r0.sMid) > MX_COMPTOIR - 2) refaire = true;
+      }
+      for (let passe = 0; passe < 2; passe++) {
+        if (refaire) {
+          const e = 2.2 * s0 * sig(K.D_COMPTOIR);
+          const y0 = Math.floor((yFond - e * 0.5 - 1) * dens) / dens;
+          const bw = Math.ceil((W + 2 * MX_COMPTOIR) * dens), bh = Math.ceil((H + BAS_COMPTOIR - y0) * dens);
+          const g = L.g || (L.g = L.c.getContext('2d'));
+          if (!r0 || r0.dens !== dens) L.c.width = L.c.height = 0;
+          dimensionner(L, bw, bh, bw, Math.ceil((H + BAS_COMPTOIR) * dens) + 2);
+          g.setTransform(1, 0, 0, 1, 0, 0);
+          g.clearRect(0, 0, L.c.width, L.c.height);
+          L.bw = bw; L.bh = bh;
+          g.setTransform(dens, 0, 0, dens, MX_COMPTOIR * dens, -y0 * dens);
+          const v = peindreComptoir(g, yFond);
+          L.R = { W, H, nuit, dens, d: cam.d, Y, cx: cam.x, y0, sMin: v[0], sMax: v[1], sMid: (v[0] + v[1]) / 2 };
+        }
+        const R2 = L.R, tx = -MX_COMPTOIR - (cam.x - R2.cx) * R2.sMid, ty = R2.y0 + (Y - R2.Y);
+        // (sur un écran de cette densité, un décalage d'une fraction de px adoucirait les joints : on repeint)
+        if (!refaire && Math.abs((window.devicePixelRatio || 1) - dens) < 0.01 && (frac(tx * dens) > 0.3 || frac(ty * dens) > 0.3)) { refaire = true; continue; }
+        poserTf(L, mat(1 / dens, 1 / dens, tx, ty));
+        break;
+      }
+      montrer(L.c, true);
+    }
+    /** les planches, le nez, l'ombre et la lumière du premier plan (px de l'hôte) ; → [la plus petite échelle, la plus grande] */
+    function peindreComptoir(g, yFond) {
+      const x0 = -MX_COMPTOIR, larg = W + 2 * MX_COMPTOIR, Hb = H + BAS_COMPTOIR;
       const bords = [];
       for (let d = K.D_COMPTOIR; d > 40; d -= 15) bords.push(d);
-      const bois = D.outils.texChene();
-      const yFond = yP(K.D_COMPTOIR);
-      if (yFond > H) return;
+      const L = L_COMPTOIR, p = L.motif || (L.motif = g.createPattern(D.outils.texChene(), 'repeat'));
+      let sMin = Infinity, sMax = 0;
       for (let i = 0; i < bords.length - 1; i++) {
         const d0 = bords[i], d1 = bords[i + 1];
         if (d1 - cam.d < 16) break;
-        const ya = yP(d0), yb = Math.min(H + 2, yP(d1));
+        const ya = yComptoir(d0), yb = Math.min(H + 2, yComptoir(d1));
         if (ya > H) break;
         const s = s0 * sig((d0 + d1) / 2);
-        const p = ctx.createPattern(bois, 'repeat');
+        sMin = Math.min(sMin, s); sMax = Math.max(sMax, s);
         if (p.setTransform && window.DOMMatrix) p.setTransform(new DOMMatrix().translate(W / 2 - cam.x * s + i * 37 * s, ya).scale(s * 0.13, (yb - ya) / 64 * 0.55));
-        ctx.fillStyle = p;
-        ctx.fillRect(0, ya, W, yb - ya + 0.6);
+        g.fillStyle = p;
+        g.fillRect(x0, ya, larg, yb - ya + 0.6);
         // chaque planche : patinée, plus claire au milieu (usée), le joint sombre
         const ton = [0.34, 0.22, 0.4, 0.28, 0.18, 0.36, 0.26][i % 7];
-        ctx.fillStyle = lin(ctx, 0, ya, 0, yb, [[0, `rgba(26,12,4,${ton + 0.25})`], [0.35, `rgba(40,20,8,${ton})`], [0.7, `rgba(40,20,8,${ton + 0.06})`], [1, `rgba(20,10,4,${ton + 0.2})`]]);
-        ctx.fillRect(0, ya, W, yb - ya + 0.6);
-        ctx.fillStyle = 'rgba(20,10,4,0.55)';
-        ctx.fillRect(0, ya, W, Math.max(0.6, (yb - ya) * 0.04));
+        rectDeg(g, degV('planche' + (i % 7), [[0, `rgba(26,12,4,${ton + 0.25})`], [0.35, `rgba(40,20,8,${ton})`], [0.7, `rgba(40,20,8,${ton + 0.06})`], [1, `rgba(20,10,4,${ton + 0.2})`]]), 0, ya, 1, yb - ya, x0, ya, larg, yb - ya + 0.6);
+        g.fillStyle = 'rgba(20,10,4,0.55)';
+        g.fillRect(x0, ya, larg, Math.max(0.6, (yb - ya) * 0.04));
       }
       // le nez du comptoir (arrondi, il accroche la lumière)
       const e = 2.2 * s0 * sig(K.D_COMPTOIR);
-      ctx.fillStyle = lin(ctx, 0, yFond - e * 0.5, 0, yFond + e, [[0, 'rgba(255,236,205,0.0)'], [0.35, 'rgba(255,236,205,0.4)'], [1, 'rgba(60,30,12,0)']]);
-      ctx.fillRect(0, yFond - e * 0.5, W, e * 1.5);
-      ctx.fillStyle = 'rgba(20,10,4,0.5)';
-      ctx.fillRect(0, yFond - 1, W, 1);
+      rectDeg(g, degV('nez', [[0, 'rgba(255,236,205,0.0)'], [0.35, 'rgba(255,236,205,0.4)'], [1, 'rgba(60,30,12,0)']]), 0, yFond - e * 0.5, 1, e * 1.5, x0, yFond - e * 0.5, larg, e * 1.5);
+      g.fillStyle = 'rgba(20,10,4,0.5)';
+      g.fillRect(x0, yFond - 1, larg, 1);
       // le premier plan s'enfonce dans l'ombre (on regarde Clément, pas nos mains)
-      ctx.fillStyle = lin(ctx, 0, yFond, 0, H, [[0, 'rgba(14,8,4,0)'], [0.5, 'rgba(14,8,4,0.25)'], [1, 'rgba(14,8,4,0.55)']]);
-      ctx.fillRect(0, yFond, W, H - yFond);
+      rectDeg(g, degV('ombrePremier', [[0, 'rgba(14,8,4,0)'], [0.5, 'rgba(14,8,4,0.25)'], [1, 'rgba(14,8,4,0.55)']]), 0, yFond, 1, H - yFond, x0, yFond, larg, Hb - yFond);
       // la lumière du jour qui vient de la vitrine (derrière nous), ou la pénombre du soir
-      ctx.fillStyle = nuit ? lin(ctx, 0, yFond, 0, H, [[0, 'rgba(10,14,30,0.15)'], [1, 'rgba(10,14,30,0.55)']]) : lin(ctx, 0, yFond, 0, H, [[0, 'rgba(255,248,235,0.05)'], [1, 'rgba(230,238,245,0.18)']]);
-      ctx.fillRect(0, yFond, W, H - yFond);
+      rectDeg(g, nuit ? degV('premierSoir', [[0, 'rgba(10,14,30,0.15)'], [1, 'rgba(10,14,30,0.55)']]) : degV('premierJour', [[0, 'rgba(255,248,235,0.05)'], [1, 'rgba(230,238,245,0.18)']]), 0, yFond, 1, H - yFond, x0, yFond, larg, Hb - yFond);
+      return sMax ? [sMin, sMax] : [0, 0];
     }
 
     /* ======================================================================
@@ -725,78 +1004,85 @@
     };
     const PR = { pivot: [76, -122], L: 26, a0: -1.2, a1: 0.35 };
     const levierBout = (k) => { const a = lerp(PR.a0, PR.a1, k); return [PR.pivot[0] + Math.cos(a) * PR.L, PR.pivot[1] + Math.sin(a) * PR.L]; };
-    function peindrePresseVive() {
+    // (les peintres des pièces vives dessinent dans le repère du monde, au plan de Clément : leur calque le pose)
+    function peindrePresseVive(g) {
       const P = M.presse;
-      repere(K.D_LANE);
       // la tige du vérin et la tête de presse qui descend
       const yt = -140 + 15 * P.tete;
-      ctx.fillStyle = acier(ctx, 43, 0, 45, 0);
-      ctx.fillRect(43, -149, 2.4, yt + 149);
-      ctx.fillStyle = lin(ctx, 0, yt, 0, yt + 8, [[0, '#3A3B3F'], [0.3, '#5E6166'], [1, '#1A1A1C']]);
-      ctx.beginPath(); rr(ctx, 33, yt, 23, 8, 1.5); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(34, yt + 0.6, 21, 0.8);
+      g.fillStyle = acier(g, 43, 0, 45, 0);
+      g.fillRect(43, -149, 2.4, yt + 149);
+      g.fillStyle = lin(g, 0, yt, 0, yt + 8, [[0, '#3A3B3F'], [0.3, '#5E6166'], [1, '#1A1A1C']]);
+      g.beginPath(); rr(g, 33, yt, 23, 8, 1.5); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(34, yt + 0.6, 21, 0.8);
       // le levier (poignée noire)
       const [bx, by] = levierBout(P.levier);
-      ctx.strokeStyle = acier(ctx, PR.pivot[0], PR.pivot[1], bx, by); ctx.lineWidth = 1.8; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(PR.pivot[0], PR.pivot[1]); ctx.lineTo(bx, by); ctx.stroke();
-      ctx.fillStyle = '#1C1C1E'; ctx.beginPath(); ctx.arc(bx, by, 2.6, 0, TAU); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(bx - 0.8, by - 0.8, 0.8, 0, TAU); ctx.fill();
+      g.strokeStyle = acier(g, PR.pivot[0], PR.pivot[1], bx, by); g.lineWidth = 1.8; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(PR.pivot[0], PR.pivot[1]); g.lineTo(bx, by); g.stroke();
+      g.fillStyle = '#1C1C1E'; g.beginPath(); g.arc(bx, by, 2.6, 0, TAU); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.3)'; g.beginPath(); g.arc(bx - 0.8, by - 0.8, 0.8, 0, TAU); g.fill();
       // l'aiguille du manomètre
       const a = -2.4 + 1.8 * P.mano;
-      ctx.strokeStyle = '#C8322A'; ctx.lineWidth = 0.35;
-      ctx.beginPath(); ctx.moveTo(69, -150); ctx.lineTo(69 + Math.cos(a) * 3.6, -150 + Math.sin(a) * 3.6); ctx.stroke();
-      ctx.fillStyle = '#2A2A2C'; ctx.beginPath(); ctx.arc(69, -150, 0.6, 0, TAU); ctx.fill();
+      g.strokeStyle = '#C8322A'; g.lineWidth = 0.35;
+      g.beginPath(); g.moveTo(69, -150); g.lineTo(69 + Math.cos(a) * 3.6, -150 + Math.sin(a) * 3.6); g.stroke();
+      g.fillStyle = '#2A2A2C'; g.beginPath(); g.arc(69, -150, 0.6, 0, TAU); g.fill();
     }
-    function peindreCoutureVive() {
+    function peindreCoutureVive(g) {
       const Cm = M.couture, cx = D.COUTURE.aiguilleX;
-      repere(K.D_LANE);
       // la barre à aiguille qui pique (floue quand ça va vite)
       const b = Math.sin(Cm.phase) * 2.1 * (Cm.vitesse > 0.02 ? 1 : 0);
       if (Cm.vitesse > 0.35) {
-        ctx.fillStyle = 'rgba(210,214,218,0.55)'; ctx.fillRect(cx - 0.35, -110, 0.7, 8.5);
+        g.fillStyle = 'rgba(210,214,218,0.55)'; g.fillRect(cx - 0.35, -110, 0.7, 8.5);
       } else {
-        ctx.fillStyle = acier(ctx, cx - 0.4, 0, cx + 0.4, 0); ctx.fillRect(cx - 0.4, -110, 0.8, 5 + b);
-        ctx.fillStyle = '#C9CDD0'; ctx.fillRect(cx - 0.12, -105 + b, 0.24, 3);
+        g.fillStyle = acier(g, cx - 0.4, 0, cx + 0.4, 0); g.fillRect(cx - 0.4, -110, 0.8, 5 + b);
+        g.fillStyle = '#C9CDD0'; g.fillRect(cx - 0.12, -105 + b, 0.24, 3);
       }
       // le pied presseur
-      ctx.fillStyle = '#9EA3A8'; ctx.fillRect(cx - 1.4, -104.6, 2.8, 1.1);
+      g.fillStyle = '#9EA3A8'; g.fillRect(cx - 1.4, -104.6, 2.8, 1.1);
       // le volant (vu de biais) : un reflet qui tourne
       const vx = D.COUTURE.volantX, vy = D.COUTURE.volantY;
-      ctx.fillStyle = '#1C1C1E'; ctx.beginPath(); ctx.ellipse(vx, vy, 2.6, 6.2, 0, 0, TAU); ctx.fill();
-      ctx.strokeStyle = '#6E7378'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.ellipse(vx, vy, 2.1, 5.4, 0, 0, TAU); ctx.stroke();
+      g.fillStyle = '#1C1C1E'; g.beginPath(); g.ellipse(vx, vy, 2.6, 6.2, 0, 0, TAU); g.fill();
+      g.strokeStyle = '#6E7378'; g.lineWidth = 0.5; g.beginPath(); g.ellipse(vx, vy, 2.1, 5.4, 0, 0, TAU); g.stroke();
       const av = Cm.volant;
-      ctx.fillStyle = 'rgba(230,232,234,0.8)';
-      ctx.beginPath(); ctx.ellipse(vx + Math.sin(av) * 1.8, vy + Math.cos(av) * 4.6, 0.5, 0.9, 0, 0, TAU); ctx.fill();
+      g.fillStyle = 'rgba(230,232,234,0.8)';
+      g.beginPath(); g.ellipse(vx + Math.sin(av) * 1.8, vy + Math.cos(av) * 4.6, 0.5, 0.9, 0, 0, TAU); g.fill();
     }
-    function peindreClesVive() {
+    function peindreClesVive(g) {
       const Kc = M.cles, mx = D.CLES.machineX;
-      repere(K.D_LANE);
       const dx = (Kc.chariot - 0.5) * 7;
       // la fraise (à droite) et le palpeur (à gauche), sur le carter
       const fx = mx + 12, fy = -117;
-      ctx.fillStyle = acier(ctx, fx - 1.6, 0, fx + 1.6, 0);
-      ctx.beginPath(); ctx.ellipse(fx, fy, 1.6, 5.4, 0, 0, TAU); ctx.fill();
+      g.fillStyle = acier(g, fx - 1.6, 0, fx + 1.6, 0);
+      g.beginPath(); g.ellipse(fx, fy, 1.6, 5.4, 0, 0, TAU); g.fill();
       if (Kc.vitesse > 0.05) {
-        ctx.fillStyle = `rgba(255,255,255,${0.35 * Kc.vitesse})`;
-        ctx.beginPath(); ctx.ellipse(fx, fy, 1.7, 5.6, 0, 0, TAU); ctx.fill();
+        g.fillStyle = `rgba(255,255,255,${0.35 * Kc.vitesse})`;
+        g.beginPath(); g.ellipse(fx, fy, 1.7, 5.6, 0, 0, TAU); g.fill();
       } else {
-        ctx.strokeStyle = 'rgba(60,60,64,0.8)'; ctx.lineWidth = 0.2;
-        ctx.beginPath(); for (let k = -4; k <= 4; k++) { ctx.moveTo(fx - 1.2, fy + k * 1.2); ctx.lineTo(fx + 1.2, fy + k * 1.2 + 0.4); } ctx.stroke();
+        g.strokeStyle = 'rgba(60,60,64,0.8)'; g.lineWidth = 0.2;
+        g.beginPath(); for (let k = -4; k <= 4; k++) { g.moveTo(fx - 1.2, fy + k * 1.2); g.lineTo(fx + 1.2, fy + k * 1.2 + 0.4); } g.stroke();
       }
-      ctx.fillStyle = '#2A2A2C'; ctx.fillRect(mx - 14, -121, 3, 5); ctx.beginPath(); ctx.moveTo(mx - 14, -116); ctx.lineTo(mx - 11, -116); ctx.lineTo(mx - 12.5, -113.5); ctx.closePath(); ctx.fill();
+      g.fillStyle = '#2A2A2C'; g.fillRect(mx - 14, -121, 3, 5); g.beginPath(); g.moveTo(mx - 14, -116); g.lineTo(mx - 11, -116); g.lineTo(mx - 12.5, -113.5); g.closePath(); g.fill();
       // le chariot et ses deux étaux
-      ctx.fillStyle = lin(ctx, 0, -113, 0, -107, [[0, '#B9BEC2'], [1, '#6E7378']]);
-      ctx.beginPath(); rr(ctx, mx - 19 + dx, -113, 38, 6, 1); ctx.fill();
+      g.fillStyle = lin(g, 0, -113, 0, -107, [[0, '#B9BEC2'], [1, '#6E7378']]);
+      g.beginPath(); rr(g, mx - 19 + dx, -113, 38, 6, 1); g.fill();
       [mx - 12.5 + dx, mx + 12 + dx].forEach((vx) => {
-        ctx.fillStyle = '#1E1E20'; ctx.fillRect(vx - 3.5, -114.6, 7, 2.6);
-        ctx.fillStyle = '#6E7378'; ctx.beginPath(); ctx.arc(vx + 4.2, -113.3, 0.9, 0, TAU); ctx.fill();
+        g.fillStyle = '#1E1E20'; g.fillRect(vx - 3.5, -114.6, 7, 2.6);
+        g.fillStyle = '#6E7378'; g.beginPath(); g.arc(vx + 4.2, -113.3, 0.9, 0, TAU); g.fill();
       });
       // la poignée du chariot, devant
-      ctx.fillStyle = '#1C1C1E'; ctx.beginPath(); ctx.arc(mx + dx, -106, 1.8, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#6E7378'; ctx.fillRect(mx - 0.4 + dx, -108.5, 0.8, 2.6);
-      // les clés serrées dans les étaux
-      if (Kc.orig) { const o = OBJ.cleOrig; o.x = mx - 17.5 + dx; o.y = -115.4; o.a = 0; dessinerObjet(ctx, o); }
-      if (Kc.neuve) { const o = OBJ.cleNeuve; o.x = mx + 7 + dx; o.y = -115.4; o.a = 0; dessinerObjet(ctx, o); }
+      g.fillStyle = '#1C1C1E'; g.beginPath(); g.arc(mx + dx, -106, 1.8, 0, TAU); g.fill();
+      g.fillStyle = '#6E7378'; g.fillRect(mx - 0.4 + dx, -108.5, 0.8, 2.6);
+      // les clés serrées dans les étaux (posées par etatTable())
+      if (Kc.orig) dessinerObjet(g, OBJ.cleOrig);
+      if (Kc.neuve) dessinerObjet(g, OBJ.cleNeuve);
+    }
+    /** ce que l'image règle avant de peindre la table, au même moment qu'avant : les clés dans les étaux, la chaussure
+        qui saute sous le marteau, le clou planté qui la suit */
+    function etatTable() {
+      const Kc = M.cles, mx = D.CLES.machineX, dx = (Kc.chariot - 0.5) * 7;
+      if (Kc.orig) { const o = OBJ.cleOrig; o.x = mx - 17.5 + dx; o.y = -115.4; o.a = 0; }
+      if (Kc.neuve) { const o = OBJ.cleNeuve; o.x = mx + 7 + dx; o.y = -115.4; o.a = 0; }
+      forme.y = -123.5 + M.etabli.choc * 0.6;
+      { const c = OBJ.clou; if (c.plante) { c.x = forme.x + c.plante[0]; c.y = forme.y + c.plante[1] - 2.2 * (1 - c.enfonce); c.a = 0; } }
     }
 
     /* ---------- les particules : poussière, étincelles, mousse, vapeur, bouffée ---------- */
@@ -813,24 +1099,32 @@
         p.x += p.vx * s; p.y += p.vy * s;
       }
     }
-    function dessinerParticules() {
-      repere(K.D_LANE);
+    /** la boîte (monde) des particules vivantes */
+    function empriseParticules() {
+      let b = null;
+      PART.forEach((p) => {
+        const r = (p.r || 0.3) * (1 + p.t * (p.grossit || 1.6)) + (p.type === 'etincelle' ? Math.hypot(p.vx, p.vy) * 0.018 : 0) + (p.type === 'eclat' ? p.r : 0) + 1.2;
+        b = etendre(b, p.x - r, p.y - r, p.x + r, p.y + r);
+      });
+      return b;
+    }
+    function dessinerParticules(g) {
       PART.forEach((p) => {
         const k = 1 - p.t / p.vie;
         if (p.type === 'etincelle') {
-          ctx.strokeStyle = `rgba(255,${(170 + 70 * k) | 0},${(60 + 60 * k) | 0},${k.toFixed(3)})`;
-          ctx.lineWidth = 0.28;
-          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.018, p.y - p.vy * 0.018); ctx.stroke();
+          g.strokeStyle = `rgba(255,${(170 + 70 * k) | 0},${(60 + 60 * k) | 0},${k.toFixed(3)})`;
+          g.lineWidth = 0.28;
+          g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(p.x - p.vx * 0.018, p.y - p.vy * 0.018); g.stroke();
         } else if (p.type === 'vapeur') {
-          ctx.fillStyle = `rgba(255,248,236,${(0.07 * Math.sin(k * Math.PI)).toFixed(3)})`;
-          ctx.beginPath(); ctx.arc(p.x + Math.sin(p.t * 3 + p.ph) * 0.8, p.y, p.r * (1 + p.t * 1.6), 0, TAU); ctx.fill();
+          g.fillStyle = `rgba(255,248,236,${(0.07 * Math.sin(k * Math.PI)).toFixed(3)})`;
+          g.beginPath(); g.arc(p.x + Math.sin(p.t * 3 + p.ph) * 0.8, p.y, p.r * (1 + p.t * 1.6), 0, TAU); g.fill();
         } else if (p.type === 'eclat') {
           const L = p.r * Math.sin(k * Math.PI);
-          ctx.fillStyle = `rgba(255,255,255,${(0.9 * Math.sin(k * Math.PI)).toFixed(3)})`;
-          ctx.beginPath(); ctx.moveTo(p.x, p.y - L); ctx.lineTo(p.x + L * 0.12, p.y - L * 0.12); ctx.lineTo(p.x + L, p.y); ctx.lineTo(p.x + L * 0.12, p.y + L * 0.12); ctx.lineTo(p.x, p.y + L); ctx.lineTo(p.x - L * 0.12, p.y + L * 0.12); ctx.lineTo(p.x - L, p.y); ctx.lineTo(p.x - L * 0.12, p.y - L * 0.12); ctx.closePath(); ctx.fill();
+          g.fillStyle = `rgba(255,255,255,${(0.9 * Math.sin(k * Math.PI)).toFixed(3)})`;
+          g.beginPath(); g.moveTo(p.x, p.y - L); g.lineTo(p.x + L * 0.12, p.y - L * 0.12); g.lineTo(p.x + L, p.y); g.lineTo(p.x + L * 0.12, p.y + L * 0.12); g.lineTo(p.x, p.y + L); g.lineTo(p.x - L * 0.12, p.y + L * 0.12); g.lineTo(p.x - L, p.y); g.lineTo(p.x - L * 0.12, p.y - L * 0.12); g.closePath(); g.fill();
         } else {
-          ctx.fillStyle = rgba(p.c || '#D8C6A8', ((p.a || 0.7) * k).toFixed(3));
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (p.grossit ? 1 + p.t * p.grossit : 1), 0, TAU); ctx.fill();
+          g.fillStyle = rgba(p.c || '#D8C6A8', ((p.a || 0.7) * k).toFixed(3));
+          g.beginPath(); g.arc(p.x, p.y, p.r * (p.grossit ? 1 + p.t * p.grossit : 1), 0, TAU); g.fill();
         }
       });
     }
@@ -841,105 +1135,136 @@
     /* ---------- la lumière : cônes des lampes, poussière qui flotte ; le soir ---------- */
     const MOUTES = Array.from({ length: 30 }, (_, i) => ({ l: i % LAMPES.length, u: R(), v: R(), ph: R() * TAU, vit: 0.3 + R() * 0.7 }));
     let tVie = 0, nuitK = nuit ? 1 : 0;
-    function peindreLumiere() {
-      repere(K.D_LANE);
-      ctx.globalCompositeOperation = 'screen';
+    /** les cônes et les halos des lampes, en « écran » ; la lampe du fond (x 540) à part : elle vacille (son calque
+        est peint au plus fort, 1,02, et son opacité suit le vacillement : l'écran est linéaire en alpha) */
+    function peindreCones(g, l540) {
+      g.globalCompositeOperation = 'screen';
       LAMPES.forEach((L) => {
-        const h = 150, f = 1 + 0.02 * Math.sin(tVie * 7.3 + L.x) * (L.x === 540 ? 1 : 0);
-        ctx.fillStyle = lin(ctx, 0, L.y, 0, L.y + h, [[0, rgba('#FFE7B8', (0.13 + 0.08 * nuitK) * f)], [1, rgba('#FFE7B8', 0)]]);
-        ctx.beginPath(); ctx.moveTo(L.x - L.l * 0.42, L.y + 2); ctx.lineTo(L.x + L.l * 0.42, L.y + 2); ctx.lineTo(L.x + L.l * 2.4, L.y + h); ctx.lineTo(L.x - L.l * 2.4, L.y + h); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = rad(ctx, L.x, L.y + 3, 26, [[0, rgba('#FFF1CF', (0.4 + 0.15 * nuitK) * f)], [1, rgba('#FFE0A0', 0)]]);
-        ctx.beginPath(); ctx.arc(L.x, L.y + 3, 26, 0, TAU); ctx.fill();
+        if ((L.x === 540) !== l540) return;
+        const h = 150, f = l540 ? 1.02 : 1;
+        g.fillStyle = lin(g, 0, L.y, 0, L.y + h, [[0, rgba('#FFE7B8', (0.13 + 0.08 * nuitK) * f)], [1, rgba('#FFE7B8', 0)]]);
+        g.beginPath(); g.moveTo(L.x - L.l * 0.42, L.y + 2); g.lineTo(L.x + L.l * 0.42, L.y + 2); g.lineTo(L.x + L.l * 2.4, L.y + h); g.lineTo(L.x - L.l * 2.4, L.y + h); g.closePath(); g.fill();
+        g.fillStyle = rad(g, L.x, L.y + 3, 26, [[0, rgba('#FFF1CF', (0.4 + 0.15 * nuitK) * f)], [1, rgba('#FFE0A0', 0)]]);
+        g.beginPath(); g.arc(L.x, L.y + 3, 26, 0, TAU); g.fill();
       });
-      MOUTES.forEach((m) => {
+      g.globalCompositeOperation = 'source-over';
+    }
+    function bornesLumiere(l540) {
+      let b = null;
+      LAMPES.forEach((L) => { if ((L.x === 540) === l540) b = etendre(b, L.x - Math.max(26, L.l * 2.4) - 1, L.y - 24, L.x + Math.max(26, L.l * 2.4) + 1, L.y + 151); });
+      return b;
+    }
+    /** la poussière qui flotte dans les cônes : une zone, peinte à chaque image */
+    const POS_MOUTES = MOUTES.map(() => [0, 0, 0]);
+    function majMoutes() {
+      let b = null;
+      MOUTES.forEach((m, i) => {
         const L = LAMPES[m.l];
         const v = (m.v + tVie * 0.012 * m.vit) % 1;
         const x = L.x + (m.u - 0.5) * L.l * (1 + v * 3.6) + Math.sin(tVie * 0.4 * m.vit + m.ph) * 3;
         const y = L.y + 8 + v * 120;
         const a = Math.sin(v * Math.PI) * (0.35 + 0.35 * Math.sin(tVie * 1.3 + m.ph));
+        const p = POS_MOUTES[i]; p[0] = x; p[1] = y; p[2] = a;
+        if (a > 0.02) b = etendre(b, x - 0.5, y - 0.5, x + 0.5, y + 0.5);
+      });
+      const Z = Z_MOUTES;
+      if (!ouvrir(Z, zoneEcran(b), densite(0.625 * qFloue))) return; // (des grains de lumière : un calque flou)
+      repereZone(Z);
+      const g = Z.g;
+      g.globalCompositeOperation = 'screen';
+      g.fillStyle = 'rgb(255,236,200)';
+      POS_MOUTES.forEach(([x, y, a]) => {
         if (a <= 0.02) return;
-        ctx.fillStyle = `rgba(255,236,200,${a.toFixed(3)})`;
-        ctx.beginPath(); ctx.arc(x, y, 0.35, 0, TAU); ctx.fill();
+        g.globalAlpha = +a.toFixed(3);
+        g.beginPath(); g.arc(x, y, 0.35, 0, TAU); g.fill();
       });
-      ctx.globalCompositeOperation = 'source-over';
-    }
-    /** le soir : une carte de lumière (petite, redessinée à chaque image) posée en « produit » sur l'image :
-        la pénombre bleutée loin des lampes, des flaques chaudes dessous ; puis le halo des ampoules */
-    let carte = null;
-    function peindreSoir() {
-      if (nuitK <= 0.001) return;
-      const cw = Math.max(8, Math.round(W / 6)), ch = Math.max(8, Math.round(H / 6));
-      if (!carte || carte.width !== cw || carte.height !== ch) carte = toile(cw, ch);
-      const g = carte.getContext('2d'), k = cw / W;
-      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = 1;
       g.globalCompositeOperation = 'source-over';
-      const fond = [lerp(255, 70, nuitK), lerp(255, 66, nuitK), lerp(255, 86, nuitK)];
-      g.fillStyle = `rgb(${fond[0] | 0},${fond[1] | 0},${fond[2] | 0})`;
-      g.fillRect(0, 0, cw, ch);
-      g.globalCompositeOperation = 'lighter';
-      LAMPES.forEach((L) => {
-        const [x, y] = ecran(L.x, L.y + 70);
-        const r = 150 * s0 * sig(K.D_LANE) * k;
-        if ((x * k) < -r || (x * k) > cw + r) return;
-        g.fillStyle = rad(g, x * k, y * k, r, [[0, `rgba(255,190,120,${(0.85 * nuitK).toFixed(3)})`], [0.45, `rgba(200,140,90,${(0.42 * nuitK).toFixed(3)})`], [1, 'rgba(150,100,70,0)']]);
-        g.fillRect(x * k - r, y * k - r, 2 * r, 2 * r);
-      });
-      // le lampadaire de la rue par la porte vitrée
-      const [px, py] = ecran(672, -160, K.D_MUR);
-      const rp = 60 * s0 * k;
-      g.fillStyle = rad(g, px * k, py * k, rp, [[0, `rgba(120,140,190,${(0.5 * nuitK).toFixed(3)})`], [1, 'rgba(120,140,190,0)']]);
-      g.fillRect(px * k - rp, py * k - rp, 2 * rp, 2 * rp);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(carte, 0, 0, cv.width, cv.height);
-      ctx.globalCompositeOperation = 'screen';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      LAMPES.forEach((L) => {
-        const [x, y] = ecran(L.x, L.y + 4);
-        const r = 34 * s0 * sig(K.D_LANE);
-        if (x < -r || x > W + r) return;
-        ctx.fillStyle = rad(ctx, x, y, r, [[0, `rgba(255,214,150,${(0.4 * nuitK).toFixed(3)})`], [1, 'rgba(255,190,120,0)']]);
-        ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
-      });
-      ctx.globalCompositeOperation = 'source-over';
     }
-    /** le caisson SMALL est lumineux : il brille à travers la pénombre du soir */
-    function peindreSmallVive() {
-      if (nuitK <= 0.02) return;
-      const [x, y] = ecran(234, -206, K.D_MUR);
-      const r = 44 * s0 * sig(K.D_MUR);
-      if (x < -r || x > W + r) return;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.globalCompositeOperation = 'screen';
-      ctx.fillStyle = rad(ctx, x, y, r, [[0, `rgba(255,246,228,${(0.5 * nuitK).toFixed(3)})`], [0.35, `rgba(255,236,210,${(0.22 * nuitK).toFixed(3)})`], [1, 'rgba(255,230,200,0)']]);
-      ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
-      ctx.globalCompositeOperation = 'source-over';
+    /** le soir : une carte de lumière (petite, redessinée quand la caméra bouge) posée en « produit » sur l'image : la
+        pénombre bleutée loin des lampes, des flaques chaudes dessous ; puis le halo des ampoules (une couche) */
+    let TACHE_SOIR = null, TACHE_RUE = null;
+    function majSoir() {
+      const L = L_SOIR;
+      if (nuitK <= 0.001) { montrer(L.c, false); return; }
+      const cw = Math.max(8, Math.round(W / 6)), ch = Math.max(8, Math.round(H / 6));
+      const cle = [cam.x, cam.d, cam.tilt, nuitK, W, H].join(',');
+      if (cle !== L.cle) {
+        L.cle = cle;
+        if (L.c.width !== cw || L.c.height !== ch) { L.c.width = cw; L.c.height = ch; }
+        if (!TACHE_SOIR) { // (les flaques des lampes et le lampadaire de la rue : des dégradés peints une fois, posés à leur taille)
+          const N = 128, tache1 = (stops) => { const c = toile(N, N), t = c.getContext('2d'); t.fillStyle = rad(t, N / 2, N / 2, N / 2, stops); t.fillRect(0, 0, N, N); return c; };
+          TACHE_SOIR = tache1([[0, 'rgba(255,190,120,0.85)'], [0.45, 'rgba(200,140,90,0.42)'], [1, 'rgba(150,100,70,0)']]);
+          TACHE_RUE = tache1([[0, 'rgba(120,140,190,0.5)'], [1, 'rgba(120,140,190,0)']]);
+        }
+        const g = L.c.getContext('2d'), k = cw / W;
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.globalCompositeOperation = 'source-over';
+        g.globalAlpha = 1;
+        const fond = [lerp(255, 70, nuitK), lerp(255, 66, nuitK), lerp(255, 86, nuitK)];
+        g.fillStyle = `rgb(${fond[0] | 0},${fond[1] | 0},${fond[2] | 0})`;
+        g.fillRect(0, 0, cw, ch);
+        g.globalCompositeOperation = 'lighter';
+        g.globalAlpha = nuitK;
+        LAMPES.forEach((Lp) => {
+          const [x, y] = ecran(Lp.x, Lp.y + 70);
+          const r = 150 * s0 * sig(K.D_LANE) * k;
+          if ((x * k) < -r || (x * k) > cw + r) return;
+          g.drawImage(TACHE_SOIR, x * k - r, y * k - r, 2 * r, 2 * r);
+        });
+        // le lampadaire de la rue par la porte vitrée
+        const [px, py] = ecran(672, -160, K.D_MUR);
+        const rp = 60 * s0 * k;
+        g.drawImage(TACHE_RUE, px * k - rp, py * k - rp, 2 * rp, 2 * rp);
+        g.globalAlpha = 1;
+        g.globalCompositeOperation = 'source-over';
+        poserTf(L, mat(W / cw, H / ch, 0, 0));
+      }
+      montrer(L.c, true);
     }
-    /** la pendule : l'heure de Paris */
-    function peindreAiguilles() {
-      const [x, y] = ecran(470, -188, K.D_MUR);
-      if (x < -40 || x > W + 40) return;
-      repere(K.D_MUR);
-      const t = CO.parisNow ? CO.parisNow() : new Date();
+    // le halo des ampoules, le soir (peint pour nuitK = 1 : son opacité suit la tombée du soir)
+    function bornesHalos() { let b = null; LAMPES.forEach((L) => { b = etendre(b, L.x - 35, L.y - 31, L.x + 35, L.y + 39); }); return b; }
+    function peindreHalosSoir(g) {
+      g.globalCompositeOperation = 'screen';
+      LAMPES.forEach((L) => {
+        g.fillStyle = rad(g, L.x, L.y + 4, 34, [[0, 'rgba(255,214,150,0.4)'], [1, 'rgba(255,190,120,0)']]);
+        g.fillRect(L.x - 34, L.y + 4 - 34, 68, 68);
+      });
+      g.globalCompositeOperation = 'source-over';
+    }
+    /** le caisson SMALL est lumineux : il brille à travers la pénombre du soir (peint pour nuitK = 1) */
+    function peindreSmallVive(g) {
+      g.fillStyle = rad(g, 234, -206, 44, [[0, 'rgba(255,246,228,0.5)'], [0.35, 'rgba(255,236,210,0.22)'], [1, 'rgba(255,230,200,0)']]);
+      g.fillRect(234 - 44, -206 - 44, 88, 88);
+    }
+    /** la pendule : l'heure de Paris (repeinte toutes les deux secondes) */
+    let hSec = -1, hVal = null;
+    const heure = () => { const t = Math.floor(Date.now() / 1000); if (t !== hSec || !hVal) { hSec = t; hVal = CO.parisNow ? CO.parisNow() : new Date(); } return hVal; }; // (une fois par seconde : l'heure de Paris coûte)
+    function sigAiguilles() { const t = heure(); return String(Math.floor((t.getHours() * 3600 + t.getMinutes() * 60 + t.getSeconds()) / 2)); }
+    function peindreAiguilles(g) {
+      const t = heure();
       const h = (t.getHours() % 12) + t.getMinutes() / 60, m = t.getMinutes() + t.getSeconds() / 60;
-      ctx.strokeStyle = '#1E1A16'; ctx.lineCap = 'round';
-      ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(470, -188); ctx.lineTo(470 + Math.sin(h / 12 * TAU) * 5.4, -188 - Math.cos(h / 12 * TAU) * 5.4); ctx.stroke();
-      ctx.lineWidth = 0.55; ctx.beginPath(); ctx.moveTo(470, -188); ctx.lineTo(470 + Math.sin(m / 60 * TAU) * 8.2, -188 - Math.cos(m / 60 * TAU) * 8.2); ctx.stroke();
-      ctx.fillStyle = '#C8322A'; ctx.beginPath(); ctx.arc(470, -188, 0.7, 0, TAU); ctx.fill();
+      g.strokeStyle = '#1E1A16'; g.lineCap = 'round';
+      g.lineWidth = 0.9; g.beginPath(); g.moveTo(470, -188); g.lineTo(470 + Math.sin(h / 12 * TAU) * 5.4, -188 - Math.cos(h / 12 * TAU) * 5.4); g.stroke();
+      g.lineWidth = 0.55; g.beginPath(); g.moveTo(470, -188); g.lineTo(470 + Math.sin(m / 60 * TAU) * 8.2, -188 - Math.cos(m / 60 * TAU) * 8.2); g.stroke();
+      g.fillStyle = '#C8322A'; g.beginPath(); g.arc(470, -188, 0.7, 0, TAU); g.fill();
     }
-    /** le cadran de la radio s'allume quand le son est là */
-    function peindreRadioVive() {
-      if (!(CO.sfx && CO.sfx.on)) return;
-      repere(K.D_OBJETS);
-      const [cx, cy, cw, chh] = D.RADIO.cadran, x = D.RADIO.x + cx, y = -K.HAUT_COMPTOIR + cy;
-      ctx.globalCompositeOperation = 'screen';
-      ctx.fillStyle = 'rgba(255,190,90,0.85)';
-      ctx.fillRect(x + 0.4, y + 0.4, cw - 0.8, chh - 0.8);
-      ctx.fillStyle = rad(ctx, x + cw / 2, y + chh / 2, 9, [[0, 'rgba(255,190,90,0.35)'], [1, 'rgba(255,190,90,0)']]);
-      ctx.fillRect(x - 10, y - 10, cw + 20, chh + 20);
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = '#C8322A'; ctx.fillRect(x + cw * (0.3 + 0.1 * Math.sin(tVie * 0.2)), y + 0.5, 0.35, chh - 1);
+    /** le cadran de la radio s'allume quand le son est là ; son aiguille rouge glisse */
+    const cadranRadio = () => { const [cx, cy, cw, chh] = D.RADIO.cadran; return [D.RADIO.x + cx, -K.HAUT_COMPTOIR + cy, cw, chh]; };
+    const aiguilleRadio = () => D.RADIO.cadran[2] * (0.3 + 0.1 * Math.sin(tVie * 0.2));
+    function bornesRadio() { const [x, y, cw, chh] = cadranRadio(); return [x - 10.5, y - 10.5, x + cw + 10.5, y + chh + 10.5]; }
+    function peindreRadioLueur(g) {
+      const [x, y, cw, chh] = cadranRadio();
+      g.globalCompositeOperation = 'screen';
+      g.fillStyle = 'rgba(255,190,90,0.85)';
+      g.fillRect(x + 0.4, y + 0.4, cw - 0.8, chh - 0.8);
+      g.fillStyle = rad(g, x + cw / 2, y + chh / 2, 9, [[0, 'rgba(255,190,90,0.35)'], [1, 'rgba(255,190,90,0)']]);
+      g.fillRect(x - 10, y - 10, cw + 20, chh + 20);
+      g.globalCompositeOperation = 'source-over';
+    }
+    function peindreRadioAiguille(g) {
+      const [x, y, , chh] = cadranRadio();
+      g.fillStyle = '#C8322A'; g.fillRect(x + aiguilleRadio(), y + 0.5, 0.35, chh - 1);
     }
 
     /* ---------- la finisseuse : les brosses et les meules qui tournent ---------- */
@@ -958,140 +1283,242 @@
       f.globalAlpha = 1;
       return (TEXROUE[type] = { net: c, flou: floue });
     }
-    function peindreRoues() {
+    function peindreRoues(g) {
       const F = M.finisseuse;
-      repere(K.D_LANE);
       D.ROUES.forEach((w) => {
         const x = w.x - w.w / 2, y = D.ARBRE_Y - w.r, h = 2 * w.r;
         const T = texRoue(w.type);
-        ctx.save();
-        ctx.beginPath(); rr(ctx, x, y, w.w, h, Math.min(3, w.w / 3)); ctx.clip();
+        g.save();
+        g.beginPath(); rr(g, x, y, w.w, h, Math.min(3, w.w / 3)); g.clip();
         const per = h * 1.6, off = ((F.angle * w.r * 0.5) % per + per) % per;
         const flou = clamp(F.vitesse * 1.4, 0, 1);
-        ctx.globalAlpha = 1 - flou * 0.85;
-        ctx.drawImage(T.net, x, y - per + off, w.w, per); ctx.drawImage(T.net, x, y + off, w.w, per);
-        if (flou > 0.02) { ctx.globalAlpha = flou; ctx.drawImage(T.flou, x, y - per + off, w.w, per); ctx.drawImage(T.flou, x, y + off, w.w, per); }
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = lin(ctx, 0, y, 0, y + h, [[0, 'rgba(0,0,0,0.75)'], [0.28, 'rgba(255,240,220,0.12)'], [0.4, 'rgba(255,255,255,0.05)'], [0.75, 'rgba(0,0,0,0.25)'], [1, 'rgba(0,0,0,0.85)']]);
-        ctx.fillRect(x, y, w.w, h);
-        ctx.fillStyle = lin(ctx, x, 0, x + w.w, 0, [[0, 'rgba(0,0,0,0.3)'], [0.3, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.35)']]);
-        ctx.fillRect(x, y, w.w, h);
-        ctx.restore();
-        ctx.fillStyle = lin(ctx, 0, D.ARBRE_Y - 3, 0, D.ARBRE_Y + 3, [[0, '#E6E9EB'], [1, '#4E5358']]);
-        ctx.fillRect(x - 0.8, D.ARBRE_Y - 2.6, 0.8, 5.2); ctx.fillRect(x + w.w, D.ARBRE_Y - 2.6, 0.8, 5.2);
+        g.globalAlpha = 1 - flou * 0.85;
+        g.drawImage(T.net, x, y - per + off, w.w, per); g.drawImage(T.net, x, y + off, w.w, per);
+        if (flou > 0.02) { g.globalAlpha = flou; g.drawImage(T.flou, x, y - per + off, w.w, per); g.drawImage(T.flou, x, y + off, w.w, per); }
+        g.globalAlpha = 1;
+        g.fillStyle = lin(g, 0, y, 0, y + h, [[0, 'rgba(0,0,0,0.75)'], [0.28, 'rgba(255,240,220,0.12)'], [0.4, 'rgba(255,255,255,0.05)'], [0.75, 'rgba(0,0,0,0.25)'], [1, 'rgba(0,0,0,0.85)']]);
+        g.fillRect(x, y, w.w, h);
+        g.fillStyle = lin(g, x, 0, x + w.w, 0, [[0, 'rgba(0,0,0,0.3)'], [0.3, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.35)']]);
+        g.fillRect(x, y, w.w, h);
+        g.restore();
+        g.fillStyle = lin(g, 0, D.ARBRE_Y - 3, 0, D.ARBRE_Y + 3, [[0, '#E6E9EB'], [1, '#4E5358']]);
+        g.fillRect(x - 0.8, D.ARBRE_Y - 2.6, 0.8, 5.2); g.fillRect(x + w.w, D.ARBRE_Y - 2.6, 0.8, 5.2);
       });
+    }
+
+    /* ---------- les couches vives : les pièces des machines, les objets posés (repeintes quand elles changent) ---------- */
+    /** la place d'un objet tenu, autour du poignet qui le tient : de quoi ne rien couper */
+    const rayonObjet = (o) => (o.id === 'basket' ? 42 : 32) * (o.k || 1);
+    /** le dessin d'un objet tient dans cette boîte de son repère (cm, avant rotation et miroir) */
+    const BOITES = {
+      marteau: [-2.5, -5, 26, 6.5], surForme: [-16, -7.5, 17, 12], clou: [-0.8, -0.8, 0.9, 2.4], pinceau: [-4.6, -0.9, 12.1, 0.9],
+      potColle: [-5.1, -8.3, 5.1, 1.9], semelle: [-14.1, -2, 15.8, 0.5], tasse: [-6.1, -11, 8.4, 1.7], chausFin: [-15.1, -7.6, 15.6, 5.6],
+      chausPresse: [-15.7, -24.1, 17.1, 0.6], basket: [-14.7, -24.1, 17.6, 0.6], brosse: [-4.7, -1.8, 4.7, 2.8], serviette: [-3.2, -4.2, 8.2, 22.2],
+      cuir: [-10.8, -1.8, 11.2, 0.8], ciseaux: [-1.8, -2.1, 6.7, 2.1], cleOrig: [-1.8, -1.8, 7.1, 1.8], cleNeuve: [-1.8, -1.8, 7.1, 1.8],
+      lime: [-9.2, -0.8, 4.2, 0.8], stylo: [-1.4, -0.7, 12, 0.7], ticketP: [-3.2, -4.3, 3.2, 4.7],
+    };
+    /** la boîte (monde) d'un objet posé : sa boîte tournée, retournée, mise à l'échelle (et 1 cm pour les traits) */
+    function boiteObjet(o) {
+      const L = BOITES[o.id] || [-20, -20, 20, 20], c = Math.cos(o.a), s = Math.sin(o.a), kx = o.sens * o.k, ky = o.k;
+      let b = null;
+      [[L[0], L[1]], [L[2], L[1]], [L[0], L[3]], [L[2], L[3]]].forEach(([lx, ly]) => {
+        const X = lx * kx, Y = ly * ky, x = o.x + c * X - s * Y, y = o.y + s * X + c * Y;
+        b = etendre(b, x - 1, y - 1, x + 1, y + 1);
+      });
+      return b;
+    }
+    /** l'état d'un objet posé, en une chaîne (tout ce qui change son dessin) */
+    function sigObjet(o) {
+      if (o.main) return 'm';
+      let s = '';
+      for (const k in o) {
+        const v = o[k];
+        if (typeof v === 'number') s += Math.round(v * 200) + ',';
+        else if (typeof v === 'boolean' || typeof v === 'string') s += v + ',';
+        else if (Array.isArray(v)) { s += v.length + ':'; if (k === 'mousse') v.forEach((b) => { s += Math.round(b.a * 200) + '.'; }); s += ','; }
+        else if (v && k === 'couleur') s += D.PAIRES.indexOf(v) + ',';
+      }
+      return s;
+    }
+    function bornesMachines() {
+      let b = [30, -156, 106, -93]; // la presse : la tige, la tête, le levier, le manomètre
+      D.ROUES.forEach((w) => { b = etendre(b, w.x - w.w / 2 - 1, D.ARBRE_Y - w.r - 3, w.x + w.w / 2 + 1, D.ARBRE_Y + w.r + 3); });
+      planMachine.forEach((o) => { if (!o.main && o.visible) b = unir(b, boiteObjet(o)); });
+      return b;
+    }
+    function sigMachines() {
+      const F = M.finisseuse, P = M.presse;
+      let s = Math.round(clamp(F.vitesse * 1.4, 0, 1) * 1000) + ',' + Math.round(P.tete * 1000) + ',' + Math.round(P.levier * 1000) + ',' + Math.round(P.mano * 1000);
+      D.ROUES.forEach((w) => { const per = 2 * w.r * 1.6; s += ',' + Math.round((((F.angle * w.r * 0.5) % per + per) % per) * 50); });
+      planMachine.forEach((o) => { s += ';' + sigObjet(o); });
+      return s;
+    }
+    function peindreMachines(g) {
+      peindreRoues(g);
+      peindrePresseVive(g);
+      planMachine.forEach((o) => { if (!o.main) dessinerObjet(g, o); });
+    }
+    function bornesTable() {
+      let b = [384, -114, 432, -97]; // la couture : l'aiguille, le pied, le volant
+      b = etendre(b, 552, -125, 606, -101); // les clés : la fraise, le chariot, les étaux
+      planTable.forEach((o) => { if (!o.main && o.visible) b = unir(b, boiteObjet(o)); });
+      return b;
+    }
+    function sigTable() {
+      const Cm = M.couture, Kc = M.cles;
+      const b = Math.sin(Cm.phase) * 2.1 * (Cm.vitesse > 0.02 ? 1 : 0);
+      let s = (Cm.vitesse > 0.35 ? 'f' : Math.round(b * 200)) + ',' + Math.round(Math.sin(Cm.volant) * 400) + ',' + Math.round(Math.cos(Cm.volant) * 400) + ';';
+      s += Math.round(Kc.chariot * 1000) + ',' + (Kc.vitesse > 0.05 ? Math.round(Kc.vitesse * 400) : 'a') + ',' + Kc.orig + Kc.neuve + ';';
+      planTable.forEach((o) => { s += sigObjet(o) + ';'; });
+      return s;
+    }
+    function peindreTable(g) {
+      peindreCoutureVive(g);
+      peindreClesVive(g);
+      planTable.forEach((o) => { if (!o.main && !(o.id === 'cleOrig' && M.cles.orig) && !(o.id === 'cleNeuve' && M.cles.neuve)) dessinerObjet(g, o); });
     }
 
     /* ---------- la vitre qu'on vient de passer (entrée, sortie) : montants vert sauge, reflets ---------- */
     let vitreK = 0; // 0 : rien ; 1 : on est contre la vitre
-    function peindreVitre() {
-      const k = vitreK;
-      if (k <= 0.004) return;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    function majVitre() {
+      const L = L_VITRE, k = vitreK;
+      if (k <= 0.004) { if (L.c.width) { L.c.width = L.c.height = 0; L.bw = L.bh = 0; } montrer(L.c, false); return; } // (rendue à la mémoire)
+      const dens = densite(0.5 * qVive), bw = Math.ceil(W * dens), bh = Math.ceil(H * dens); // (un passage de quelques images, flou de bougé : 1 px par px CSS)
+      const g = L.g || (L.g = L.c.getContext('2d'));
+      if (L.dens !== dens) { L.dens = dens; L.c.width = L.c.height = 0; }
+      dimensionner(L, bw, bh, bw, bh);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, L.c.width, L.c.height);
+      g.setTransform(dens, 0, 0, dens, 0, 0);
+      peindreVitre(g, k);
+      poserTf(L, mat(1 / dens, 1 / dens, 0, 0));
+      montrer(L.c, true);
+    }
+    function peindreVitre(g, k) {
       // le verre : une légère teinte et des reflets obliques
-      ctx.fillStyle = `rgba(214,228,232,${(0.18 * k).toFixed(3)})`;
-      ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = `rgba(255,255,255,${(0.14 * k).toFixed(3)})`;
+      g.fillStyle = `rgba(214,228,232,${(0.18 * k).toFixed(3)})`;
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = `rgba(255,255,255,${(0.14 * k).toFixed(3)})`;
       const o = (1 - k) * W * 0.6;
-      ctx.beginPath(); ctx.moveTo(W * 0.12 + o, H); ctx.lineTo(W * 0.62 + o, 0); ctx.lineTo(W * 0.8 + o, 0); ctx.lineTo(W * 0.3 + o, H); ctx.closePath(); ctx.fill();
+      g.beginPath(); g.moveTo(W * 0.12 + o, H); g.lineTo(W * 0.62 + o, 0); g.lineTo(W * 0.8 + o, 0); g.lineTo(W * 0.3 + o, H); g.closePath(); g.fill();
       // les montants de la devanture (vert sauge), qui s'écartent quand on passe
       const e = Math.pow(k, 2.2);
       const larg = lerp(W * 3.2, W * 1.02, e), ep = lerp(W * 0.5, W * 0.035, e);
-      ctx.fillStyle = C.sauge;
+      g.fillStyle = C.sauge;
       [-1, 1].forEach((s) => {
         const x = W / 2 + s * larg / 2;
-        ctx.fillRect(x - ep / 2, 0, ep, H);
-        ctx.fillStyle = `rgba(255,255,255,0.18)`; ctx.fillRect(x - ep / 2, 0, ep * 0.18, H);
-        ctx.fillStyle = C.sauge;
+        g.fillRect(x - ep / 2, 0, ep, H);
+        g.fillStyle = `rgba(255,255,255,0.18)`; g.fillRect(x - ep / 2, 0, ep * 0.18, H);
+        g.fillStyle = C.sauge;
       });
       const yt = lerp(-H * 1.2, H * 0.06, e), yb = lerp(H * 2.2, H * 0.9, e);
-      ctx.fillRect(0, yt - ep, W, ep);
-      ctx.fillRect(0, yb, W, ep * 1.6);
+      g.fillRect(0, yt - ep, W, ep);
+      g.fillRect(0, yb, W, ep * 1.6);
     }
 
     /* ---------- le premier passage : un halo doux autour de Clément (une fois) ---------- */
     let indice = null;
-    function peindreIndice() {
-      if (!indice) return;
+    function majIndice() {
+      const L = L_INDICE;
+      if (!indice) { montrer(L.c, false); return; }
       const p = (tVie - indice.t0) / 2.8;
-      if (p >= 1) { indice = null; return; }
+      if (p >= 1) { indice = null; montrer(L.c, false); L.c.width = L.c.height = 0; L.r = 0; return; }
       const t = cl.tete();
       const [x, y] = ecran(t.x, t.y + 34);
       const r = 62 * s0 * sig(K.D_LANE);
       const a = Math.pow(Math.sin(p * Math.PI * 2), 2) * Math.sin(p * Math.PI);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.globalCompositeOperation = 'screen';
-      ctx.save();
-      ctx.translate(x, y); ctx.scale(0.72, 1);
-      ctx.fillStyle = rad(ctx, 0, 0, r, [[0, `rgba(255,226,170,${(0.22 * a).toFixed(3)})`], [0.55, `rgba(255,214,150,${(0.12 * a).toFixed(3)})`], [1, 'rgba(255,214,150,0)']]);
-      ctx.fillRect(-r, -r, 2 * r, 2 * r);
-      ctx.restore();
-      ctx.globalCompositeOperation = 'source-over';
+      // (le halo est peint pour a = 1, à son rayon ; son opacité suit le battement : l'écran est linéaire en alpha)
+      const dens = Math.max(Math.min(1, dpr), qFloue);
+      if (Math.abs(r - L.r) > L.r * 0.005 || L.dens !== dens) {
+        L.r = r; L.dens = dens;
+        const bw = Math.ceil(2 * r * 0.72 * dens) + 2, bh = Math.ceil(2 * r * dens) + 2;
+        L.c.width = bw; L.c.height = bh;
+        const g = L.c.getContext('2d');
+        g.setTransform(dens * 0.72, 0, 0, dens, bw / 2, bh / 2);
+        g.fillStyle = rad(g, 0, 0, r, [[0, 'rgba(255,226,170,0.22)'], [0.55, 'rgba(255,214,150,0.12)'], [1, 'rgba(255,214,150,0)']]);
+        g.fillRect(-r, -r, 2 * r, 2 * r);
+      }
+      poserTf(L, mat(1 / L.dens, 1 / L.dens, x - L.c.width / 2 / L.dens, y - L.c.height / 2 / L.dens));
+      opacite(L.c, a);
+      montrer(L.c, a > 0.0005);
     }
 
-    /* ---------- le rendu d'une image ---------- */
+    /* ---------- le vignettage (fixe : peint une fois par taille ; son opacité suit le soir) ---------- */
+    function majVignette() {
+      const L = L_VIGNETTE, cle = W + 'x' + H;
+      if (L.cle !== cle) {
+        L.cle = cle;
+        const dens = 0.5, bw = Math.ceil(W * dens), bh = Math.ceil(H * dens);
+        L.c.width = bw; L.c.height = bh;
+        const g = L.c.getContext('2d');
+        g.setTransform(bw / W, 0, 0, bh / H, 0, 0);
+        g.fillStyle = rad(g, W / 2, H * 0.42, Math.max(W, H) * 0.78, [[0.45, 'rgba(12,7,3,0)'], [1, 'rgba(12,7,3,0.65)']]);
+        g.fillRect(0, 0, W, H);
+        poserTf(L, mat(W / bw, H / bh, 0, 0));
+      }
+      opacite(L.c, (0.5 + 0.15 * nuitK) / 0.65);
+      montrer(L.c, true);
+    }
+
+    /* ---------- le rendu d'une image : chaque calque à sa place, repeint s'il le faut ---------- */
     const planMachine = [], planTable = [];
     const PERF = window.CO_BQ_PERF ? {} : null;
     let tP = 0;
     const jalon = (nom) => { if (!PERF) return; const t = performance.now(); PERF[nom] = (PERF[nom] || 0) * 0.9 + (t - tP) * 0.1; tP = t; };
+    // ce que tient une main : il suit la main, il se dessine entre le bras et les doigts
+    const objets = (g, Mn, B) => { if (Mn.objet) { if (Mn.objet.main !== 'deux') suivreMain(Mn.objet, B); dessinerObjet(g, Mn.objet); } };
+    let MUET = null;
+    /** (Clément hors de l'écran : on le dessine quand même, hors du canevas, pour ses repères et ce qu'il tient) */
+    function muet(dens) {
+      const g = MUET || (MUET = toile(1, 1).getContext('2d')), s = s0 * sig(K.D_LANE);
+      g.setTransform(s * dens, 0, 0, s * dens, -1e6, -1e6);
+      return g;
+    }
     function rendre() {
       if (PERF) tP = performance.now();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = '#1A130E';
-      ctx.fillRect(0, 0, cv.width, cv.height);
-      peindrePlafond();
-      jalon('plafond');
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      poser(SP.mur, K.D_MUR);
-      poser(nuitK > 0.5 ? SP.porteNuit : SP.porteJour, K.D_MUR);
-      poser(SP.small, K.D_MUR);
-      peindreAiguilles();
-      jalon('mur');
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      LAMPES.forEach((L, i) => poser(SP['lampe' + i], K.D_LANE));
-      poser(SP.presse, K.D_LANE);
-      poser(SP.finisseuse, K.D_LANE);
+      const dv = densite(qVive);
+      // le décor fixe : ses plans suivent la caméra (le compositeur les déplace, rien ne se repeint)
+      poserPlan(P_MUR); poserPlan(P_FOND); poserTf(P_MEUBLES, P_FOND.tf); poserPlan(P_OBJETS); poserPlan(P_PREMIER);
+      if (SP.porteJour) montrer(SP.porteJour.c, nuitK <= 0.5);
+      if (SP.porteNuit) montrer(SP.porteNuit.c, nuitK > 0.5);
+      montrer(P_PREMIER.c, cam.d < D_PREMIER - 30);
+      majPlafond();
+      majCouche(L_AIGUILLES);
+      jalon('decor');
+      majCouche(L_MACHINES);
       jalon('machines');
-      peindreRoues();
-      peindrePresseVive();
-      repere(K.D_LANE);
-      planMachine.forEach((o) => { if (!o.main) dessinerObjet(ctx, o); });
-      jalon('machinesVives');
-      // Clément (le corps), les meubles devant lui, puis ses bras et ce qu'il tient
-      const objets = (g, Mn, B) => { if (Mn.objet) { if (Mn.objet.main !== 'deux') suivreMain(Mn.objet, B); dessinerObjet(g, Mn.objet); } };
-      cl.dessiner(ctx, 'corps', objets);
+      // Clément (le corps)
+      const em = cl.emprise(rayonObjet);
+      if (ouvrir(Z_CORPS, zoneEcran(em.corps), dv)) { repereZone(Z_CORPS); Z_CORPS.g.lineCap = 'round'; cl.dessiner(Z_CORPS.g, 'corps', objets); } else cl.dessiner(muet(dv), 'corps', objets);
       jalon('clementCorps');
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      poser(SP.etabli, K.D_LANE);
-      poser(SP.couture, K.D_LANE);
-      poser(SP.nettoyage, K.D_LANE);
-      poser(SP.cles, K.D_LANE);
+      // les meubles devant lui (images), puis les pièces vives et les objets posés
+      etatTable();
+      majCouche(L_TABLE);
       jalon('meubles');
-      peindreCoutureVive();
-      peindreClesVive();
-      repere(K.D_LANE);
-      forme.y = -123.5 + M.etabli.choc * 0.6;
-      { const c = OBJ.clou; if (c.plante) { c.x = forme.x + c.plante[0]; c.y = forme.y + c.plante[1] - 2.2 * (1 - c.enfonce); c.a = 0; } }
-      planTable.forEach((o) => { if (!o.main && !(o.id === 'cleOrig' && M.cles.orig) && !(o.id === 'cleNeuve' && M.cles.neuve)) dessinerObjet(ctx, o); });
-      jalon('meublesVifs');
-      cl.dessiner(ctx, 'devant', objets);
+      // ses bras et ce qu'il tient, la poussière
+      if (ouvrir(Z_DEVANT, zoneEcran(unir(em.bras, empriseParticules())), dv)) {
+        repereZone(Z_DEVANT); Z_DEVANT.g.lineCap = 'round';
+        cl.dessiner(Z_DEVANT.g, 'devant', objets);
+        dessinerParticules(Z_DEVANT.g);
+      } else cl.dessiner(muet(dv), 'devant', objets);
       jalon('clementDevant');
-      dessinerParticules();
-      peindreLumiere();
+      // la lumière des lampes (la lampe du fond vacille), la poussière qui flotte
+      majCouche(L_LUMIERE);
+      majCouche(L_LUMIERE540);
+      opacite(L_LUMIERE540.c, (1 + 0.02 * Math.sin(tVie * 7.3 + 540)) / 1.02);
+      majMoutes();
       jalon('lumiere');
-      peindreComptoir();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      OBJETS_COMPTOIR.forEach((n) => poser(SP[n], K.D_OBJETS));
-      if (cam.d < D_PREMIER - 30) PREMIER_PLAN.forEach((n) => poser(SP[n], D_PREMIER));
+      majComptoir();
       jalon('comptoir');
-      peindreSoir();
-      peindreRadioVive();
-      peindreSmallVive();
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = rad(ctx, W / 2, H * 0.42, Math.max(W, H) * 0.78, [[0.45, 'rgba(12,7,3,0)'], [1, `rgba(12,7,3,${(0.5 + 0.15 * nuitK).toFixed(3)})`]]);
-      ctx.fillRect(0, 0, W, H);
-      peindreIndice();
-      peindreVitre();
+      // le soir, la radio, le caisson lumineux, le vignettage, l'indice, la vitre
+      majSoir();
+      majCouche(L_SOIR_HALOS); opacite(L_SOIR_HALOS.c, nuitK);
+      majCouche(L_RADIO);
+      majCouche(L_RADIO_AIGUILLE);
+      majCouche(L_SMALL); opacite(L_SMALL.c, nuitK);
+      majVignette();
+      majIndice();
+      majVitre();
       jalon('voiles');
     }
     Object.values(OBJ).forEach((o) => (o.plan === 'machine' ? planMachine : planTable).push(o));
@@ -1896,6 +2323,7 @@
       raf = 0;
       if (!actif()) { tPrec = 0; couperSons(); return; }
       if (tPrec && now - tPrec < 1000 / 30 - 3) { raf = requestAnimationFrame(image); return; }
+      const ecart = tPrec ? now - tPrec : 0;
       const dt = tPrec ? Math.min(70, now - tPrec) : 16;
       tPrec = now;
       const t0 = performance.now();
@@ -1904,7 +2332,23 @@
       placerCibles();
       nImages++;
       cadence = cadence * 0.9 + (performance.now() - t0) * 0.1;
+      if (ecart) adapter(ecart);
       if ((vivant && !reduit) || transition) raf = requestAnimationFrame(image);
+    }
+    /* la densité adaptative : quand les images traînent (moins de ~22 i/s, deux secondes durant), les calques vifs (Clément,
+       les objets) passent de 2 à 1,5 px par px, puis les calques flous (la lumière) à 1,25 ; ça remonte après ~12 s de
+       bonne cadence */
+    const PALIERS = [[1, 1], [0.75, 0.75], [0.75, 0.625], [0.625, 0.625]];
+    let palier = 0, moyImg = 33.3, nAdapt = 0;
+    function adapter(ecart) {
+      if (opts.adaptatif === false || ecart > 250 || transition) return; // (une reprise, un mouvement de caméra de l'appli : on ne juge pas là-dessus)
+      moyImg = moyImg * 0.94 + ecart * 0.06;
+      nAdapt++;
+      if (moyImg > 46 && nAdapt > 60 && palier < PALIERS.length - 1) palier++;
+      else if (moyImg < 36 && nAdapt > 360 && palier > 0) palier--;
+      else return;
+      nAdapt = 0;
+      [qVive, qFloue] = PALIERS[palier];
     }
     function etatChange() {
       if (actif()) { tPrec = 0; demander(); } else couperSons();
@@ -1914,25 +2358,45 @@
     document.addEventListener('visibilitychange', onVis);
     const io = window.IntersectionObserver ? new IntersectionObserver((es) => { ecranOk = es[es.length - 1].isIntersecting; etatChange(); }) : null;
     if (io) io.observe(host);
+    /** tout est à repeindre (la taille a changé, des canevas ont été perdus) */
+    function salir() {
+      [L_AIGUILLES, L_MACHINES, L_TABLE, L_LUMIERE, L_LUMIERE540, L_SOIR_HALOS, L_RADIO, L_RADIO_AIGUILLE, L_SMALL].forEach((L) => { L.sale = true; });
+      L_COMPTOIR.R = null; L_PLAFOND.cle = L_SOIR.cle = L_VIGNETTE.cle = ''; L_INDICE.r = 0;
+    }
+    const PLANS = [P_MUR, P_FOND, P_MEUBLES, P_OBJETS, P_PREMIER];
+    /** les images du décor (re)prennent leur place ; celles qu'elles remplacent rendent leur mémoire */
+    function accrocherTout() {
+      PLANS.forEach((P) => {
+        const avant = Array.from(P.c.children);
+        accrocher(P);
+        avant.forEach((c) => { if (c.parentNode !== P.c) c.width = c.height = 0; });
+      });
+    }
     let rzT = 0, s0Peint = 0, repeintTour = 0;
+    function repeindreDecor() {
+      const tour = ++repeintTour, s1 = s0;
+      peindreToutDoucement(() => tour !== repeintTour || mort).then((ok) => {
+        if (!ok || tour !== repeintTour || mort) return;
+        s0Peint = s1; accrocherTout(); cl.viderCaches(); salir();
+        if (vueOk && docOk) { rendre(); placerCibles(); }
+      });
+    }
     const ro = window.ResizeObserver ? new ResizeObserver(() => {
       if (mort || !pret) return;
-      const avant = W;
+      const avant = W, avantH = H;
       mesurer();
       if (Math.abs(s0 - s0Peint) / (s0Peint || 1) > 0.15) { // (l'écran a tourné) : le décor repeint à la nouvelle échelle, par tranches
         clearTimeout(rzT);
-        rzT = setTimeout(() => {
-          if (mort) return;
-          const tour = ++repeintTour, s1 = s0;
-          peindreToutDoucement(() => tour !== repeintTour || mort).then(() => { if (tour !== repeintTour || mort) return; s0Peint = s1; cl.viderCaches(); rendre(); placerCibles(); });
-        }, 220);
+        rzT = setTimeout(() => { if (!mort) repeindreDecor(); }, 220);
       }
-      if (avant !== W || !raf) { rendre(); placerCibles(); }
+      if (avant !== W || avantH !== H) salir();
+      // (rien du tout quand la scène ne se voit pas : la prochaine image la remettra à sa taille)
+      if ((avant !== W || avantH !== H || !raf) && vueOk && docOk) { rendre(); placerCibles(); }
       demander();
     }) : null;
     if (ro) ro.observe(host);
     // le navigateur peut reprendre la mémoire des canevas (onglet en arrière-plan, mémoire pleine) : on repeint
-    cv.addEventListener('contextrestored', () => { if (mort || !pret) return; peindreTout(); cl.viderCaches(); rendre(); placerCibles(); });
+    racine.addEventListener('contextrestored', () => { if (mort || !pret) return; cl.viderCaches(); salir(); repeindreDecor(); demander(); }, true);
 
     /* ---------- les zones à toucher (boutons transparents, suivent la caméra) ---------- */
     const CIBLES = [
@@ -1964,12 +2428,13 @@
         const vis = L > 14 && Hh > 14 && !(camLibre && c.id !== 'clement');
         if (c.el.hidden === vis) c.el.hidden = !vis;
         if (!vis) return;
-        // au moins 44 px de côté (le doigt)
+        // au moins 44 px de côté (le doigt) ; (on n'écrit le style que s'il change : pas de mise en page pour rien)
         const cx = (Math.max(0, x0) + Math.min(W, x1)) / 2, cy = (Math.max(0, y0) + Math.min(H, y1)) / 2;
         const ww = Math.max(44, L), hh = Math.max(44, Hh);
-        c.el.style.transform = `translate(${(cx - ww / 2).toFixed(1)}px,${(cy - hh / 2).toFixed(1)}px)`;
-        c.el.style.width = ww.toFixed(0) + 'px';
-        c.el.style.height = hh.toFixed(0) + 'px';
+        const tf = `translate(${(cx - ww / 2).toFixed(1)}px,${(cy - hh / 2).toFixed(1)}px)`, lw = ww.toFixed(0) + 'px', lh = hh.toFixed(0) + 'px';
+        if (c.tf !== tf) { c.tf = tf; c.el.style.transform = tf; }
+        if (c.lw !== lw) { c.lw = lw; c.el.style.width = lw; }
+        if (c.lh !== lh) { c.lh = lh; c.el.style.height = lh; }
       });
     }
 
@@ -1996,20 +2461,41 @@
     s0Peint = s0;
     // la pose de départ : à l'établi, le marteau levé (comme on le voit depuis la rue)
     poseDepart();
-    await peindreToutDoucement();
-    // le premier dessin de Clément (ses images en cache) et des meules, dans leur propre tranche
-    try {
-      const g0 = toile(4, 4).getContext('2d'), k0 = s0 * sig(K.D_LANE) * dpr;
-      g0.setTransform(k0, 0, 0, k0, 0, 0);
-      cl.dessiner(g0, 'tout');
-      D.ROUES.forEach((w) => texRoue(w.type));
-    } catch (e) { /* rien */ }
+    // le décor ; puis, chacun dans sa tranche : les meules, le premier dessin de Clément (ses images en cache), les calques
+    // qu'on ne repeint qu'à l'occasion (la première image n'aura plus qu'à poser le reste)
+    const tranche = (nom, fn) => { const f = () => { try { fn(); } catch (e) { console.warn('boutique', e); } return null; }; f.nom = nom; return f; };
+    await peindreToutDoucement(() => mort, [
+      ...D.ROUES.map((w) => tranche('meule ' + w.type, () => texRoue(w.type))),
+      Object.assign(() => {
+        const g0 = toile(4, 4).getContext('2d'), k0 = s0 * sig(K.D_LANE) * densite(qVive);
+        g0.setTransform(k0, 0, 0, k0, 0, 0);
+        return { iter: cl.prechaufferCaches(g0), fin() {} };
+      }, { nom: 'Clément en cache' }),
+      tranche('comptoir', majComptoir),
+      tranche('lumière', () => { majCouche(L_LUMIERE); majCouche(L_LUMIERE540); }),
+      tranche('machines', () => majCouche(L_MACHINES)),
+      tranche('table', () => { etatTable(); majCouche(L_TABLE); }),
+      tranche('vignettage', () => { majVignette(); majCouche(L_AIGUILLES); majPlafond(); }),
+    ]);
+    if (!mort) accrocherTout();
     await new Promise((r) => setTimeout(r, 0));
     pret = true;
     maj(0);
     rendre();
     placerCibles();
 
+    /** la mémoire des canevas de la scène (octets) : le décor, les calques, les images en cache de Clément */
+    function memoire() {
+      const o = (c) => (c ? c.width * c.height * 4 : 0);
+      let decor = o(petitCtx && petitCtx.canvas) + o(TACHE_SOIR) + o(TACHE_RUE), calques = 0;
+      Object.values(SP).forEach((sp) => { if (sp) decor += o(sp.c); });
+      Object.values(TEXROUE).forEach((t) => { decor += o(t.net) + o(t.flou); });
+      const detail = {};
+      CANEVAS.forEach((c) => { calques += o(c); if (o(c)) detail[c.dataset.calque] = mo(o(c)); });
+      const clement = (cl.stats && cl.stats.octets) || 0;
+      return { decor, calques, clement, total: decor + calques + clement, detail };
+    }
+    const mo = (v) => Math.round(v / 104857.6) / 10;
     /* ======================================================================
        L'API
        ====================================================================== */
@@ -2033,6 +2519,10 @@
         document.removeEventListener('visibilitychange', onVis);
         if (io) io.disconnect(); if (ro) ro.disconnect();
         racine.remove();
+        // (la mémoire des canevas rendue tout de suite : iOS compte le total, il n'attend pas le ramasse-miettes)
+        CANEVAS.forEach((c) => { c.width = c.height = 0; });
+        Object.values(SP).forEach((sp) => { if (sp) sp.c.width = sp.c.height = 0; });
+        cl.viderCaches();
         listeners = {};
       },
       on(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); return () => { listeners[ev] = (listeners[ev] || []).filter((f) => f !== fn); }; },
@@ -2099,10 +2589,16 @@
       /** (labo) le dedans de la scène, à lire ou à régler à la main avant un pas(0) */
       get labo() { return { S, OBJ, M, cam, prendre, lacher, tiltPour }; },
       get activites() { return Object.keys(ACTIVITES); },
-      setNuit(on) { nuit = !!on; if (reduit) { nuitK = nuit ? 1 : 0; rendre(); } demander(); },
+      setNuit(on) {
+        nuit = !!on;
+        if (pret && !SP[nuit ? 'porteNuit' : 'porteJour']) { porte(nuit); accrocher(P_MUR); } // (l'autre porte, peinte à la demande)
+        if (reduit) { nuitK = nuit ? 1 : 0; rendre(); }
+        demander();
+      },
       perf: PERF,
       tempsSprites: TEMPS_SPRITE,
-      etat() { return { drapeaux: { pret, mort, enPause, vueOk, docOk, ecranOk, W, vivant, raf: !!raf }, voix: Object.keys(voix).filter((k) => voix[k].v), memoire: Math.round(Object.values(SP).reduce((m, sp) => m + (sp ? sp.c.width * sp.c.height * 4 : 0), 0) / 1048576) + ' Mo', images: nImages, caches: cl.stats, activite: enCours, x: S.x, regardeNous, parle, nuit, particules: PART.length, cadence: +cadence.toFixed(2), cam: { x: +cam.x.toFixed(1), d: +cam.d.toFixed(1), tilt: +cam.tilt.toFixed(3) } }; },
+      tranches: TRANCHES,
+      etat() { return { drapeaux: { pret, mort, enPause, vueOk, docOk, ecranOk, W, vivant, raf: !!raf }, voix: Object.keys(voix).filter((k) => voix[k].v), memoire: (() => { const m = memoire(); return `${mo(m.total)} Mo (décor ${mo(m.decor)}, calques ${mo(m.calques)}, Clément ${mo(m.clement)})`; })(), calques: memoire().detail, densite: { vive: densite(qVive), floue: densite(qFloue), palier }, images: nImages, caches: cl.stats, activite: enCours, x: S.x, regardeNous, parle, nuit, particules: PART.length, cadence: +cadence.toFixed(2), cam: { x: +cam.x.toFixed(1), d: +cam.d.toFixed(1), tilt: +cam.tilt.toFixed(3) } }; },
     };
     function poseDepart() {
       S.x = STATIONS.etabli.x; S.yaw = 0; S.assis = 0; S.lean = 0.2; S.tete.turn = 0; S.tete.pitch = 0.5; S.regard = [0, -0.4]; S.sourire = 0; S.bouche = 0;

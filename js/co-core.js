@@ -212,46 +212,81 @@
   CO.emit = (ev, data) => (listeners[ev] || []).forEach((fn) => fn(data));
 
   /* ---------- L'ambiance : les animations décoratives sans fin (feuillages, vapeur, reflets…) ----------
-     Redessiner une scène SVG coûte cher, à chaque image : on ne les laisse pas tourner seules à 60 images/s.
-     Chacune appartient à une scène (l'élément qui doit être à l'écran) ; on les avance nous-mêmes environ
-     24 fois par seconde (sur ces mouvements lents, l'œil n'y voit rien), et seulement quand la scène se voit :
-     son onglet est ouvert, elle est dans la fenêtre, la page est au premier plan. Sinon elles s'arrêtent
-     net, et ne coûtent plus rien.
-       CO.ambiance.anime(animation, scene)   une animation Web sans fin (mise en pause, puis avancée par nous)
-       CO.ambiance.smil(svg, scene)          la ligne de temps SMIL d'un <svg>
-       CO.ambiance.visible(scene)            la scène se voit-elle ? (pour les petites vies à minuteur)     */
+     Chacune appartient à une scène (l'élément qui doit être à l'écran) et ne tourne que quand la scène se voit :
+     son onglet est ouvert, elle est dans la fenêtre, la page est au premier plan, l'ouverture (l'écran de
+     chargement) ne la couvre plus. Sinon elles s'arrêtent net, et ne coûtent plus rien. Deux sortes :
+       - transform / opacity d'un élément HTML (ou d'un <svg> entier) : le navigateur la joue lui-même, sur le
+         compositeur (rien à recalculer ni à repeindre, l'image reste fluide) ; on la met seulement en pause ou
+         en lecture, selon la scène ;
+       - une animation à l'intérieur d'un SVG (ou d'une autre propriété) : la redessiner coûte cher à chaque
+         image, on ne la laisse pas tourner seule à 60 images/s : on l'avance nous-mêmes, 24 fois par seconde
+         (option ips : moins encore), sur ces mouvements lents l'œil n'y voit rien.
+       CO.ambiance.anime(animation, scene, { ips })   une animation Web sans fin (renvoie l'animation)
+       CO.ambiance.smil(svg, scene)                   la ligne de temps SMIL d'un <svg> (avancée par nous)
+       CO.ambiance.visible(scene)                     la scène se voit-elle ? (pour les petites vies à minuteur)
+       CO.ambiance.quand(scene, fn)                   fn(visible) quand cela change ; renvoie de quoi arrêter     */
   CO.ambiance = (function () {
     const PAS = 1000 / 24;
-    const scenes = new Map(); // élément → { vue, dedans, anims, svgs }
-    let vue = null, minuteur = 0, raf = 0, prec = 0;
+    const scenes = new Map(); // élément → { vue, dedans, anims (avancées par nous : animation → { pas, reste }), natives, svgs, ecoutes, vu }
+    let vue = null, minuteur = 0, raf = 0, prec = 0, ouverte = false;
     const io = window.IntersectionObserver ? new IntersectionObserver((es) => {
       es.forEach((e) => { const s = scenes.get(e.target); if (s) s.dedans = e.isIntersecting; });
-      relance();
+      regler();
     }) : null;
+    // l'ouverture couvre l'appli tant que <html> porte la classe « ouverture » (et qu'elle n'a pas dévoilé l'appli)
+    const couverte = () => !ouverte && document.documentElement.classList.contains('ouverture');
+    const mo = window.MutationObserver && couverte() ? new MutationObserver(() => { if (!couverte()) { mo.disconnect(); regler(); } }) : null;
+    if (mo) mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     function scene(el) {
       let s = scenes.get(el);
       if (!s) {
         const v = el.closest && el.closest('.view');
-        s = { vue: v ? v.id : null, dedans: !io, anims: new Set(), svgs: new Set() };
+        s = { vue: v ? v.id : null, dedans: !io, anims: new Map(), natives: new Set(), pausees: new Set(), svgs: new Set(), ecoutes: new Set(), vu: undefined };
         scenes.set(el, s);
         if (io) io.observe(el);
       }
       return s;
     }
-    const active = (s) => s.dedans && (!s.vue || s.vue === vue);
+    const active = (s) => s.dedans && (!s.vue || s.vue === vue) && !document.hidden && !couverte();
+    function oublier(el) { scenes.delete(el); if (io) io.unobserve(el); }
+    // ce que le compositeur sait jouer seul : transform et opacity d'un élément qui a sa propre boîte
+    const SEULE = /^(transform|opacity|translate|rotate|scale)$/, AUTRE = /^(offset|computedOffset|easing|composite)$/;
+    function native(a) {
+      const t = a.effect && a.effect.target;
+      if (!t || !(t instanceof Element) || (t instanceof SVGElement && t.ownerSVGElement)) return false;
+      try {
+        const kf = a.effect.getKeyframes();
+        return kf.length > 0 && kf.every((k) => Object.keys(k).every((p) => AUTRE.test(p) || SEULE.test(p)));
+      } catch (e) { return false; }
+    }
+    /** Chaque scène : ses animations natives en lecture ou en pause, ses écoutes prévenues ; puis la boucle des autres */
+    function regler() {
+      scenes.forEach((s, el) => {
+        if (!el.isConnected) { oublier(el); return; }
+        const on = active(s);
+        s.natives.forEach((a) => { // (on ne relance que ce qu'on a mis en pause nous-mêmes)
+          if (a.playState === 'idle' || a.playState === 'finished') { s.natives.delete(a); s.pausees.delete(a); return; }
+          if (on && a.playState === 'paused' && s.pausees.has(a)) { s.pausees.delete(a); a.play(); }
+          else if (!on && a.playState === 'running') { a.pause(); s.pausees.add(a); }
+        });
+        if (on !== s.vu) { s.vu = on; s.ecoutes.forEach((fn) => { try { fn(on); } catch (e) { /* une écoute fautive n'arrête rien */ } }); }
+      });
+      relance();
+    }
     function image(now) {
       raf = 0;
-      if (document.hidden) { prec = 0; return; }
+      if (document.hidden || couverte()) { prec = 0; return; }
       const dt = prec ? Math.min(PAS * 2, now - prec) : PAS; // au retour d'une pause : on reprend sans sauter
       prec = now;
       let encore = false;
       scenes.forEach((s, el) => {
-        if (!el.isConnected) { scenes.delete(el); if (io) io.unobserve(el); return; }
+        if (!el.isConnected) { oublier(el); return; }
         if (!active(s)) return;
-        s.anims.forEach((a) => {
+        s.anims.forEach((o, a) => {
           const t = a.effect && a.effect.target;
           if (a.playState === 'idle' || (t && !t.isConnected)) { s.anims.delete(a); return; }
-          a.currentTime = (a.currentTime || 0) + dt;
+          o.reste += dt;
+          if (o.reste >= o.pas - 1) { a.currentTime = (a.currentTime || 0) + o.reste; o.reste = 0; } // (à sa cadence)
           encore = true;
         });
         s.svgs.forEach((svg) => { svg.setCurrentTime(svg.getCurrentTime() + dt / 1000); encore = true; });
@@ -261,14 +296,21 @@
     }
     function demande() { minuteur = 0; if (!raf) raf = requestAnimationFrame(image); }
     function relance() { if (!minuteur && !raf) demande(); }
-    CO.on('view', (v) => { vue = v; relance(); });
-    document.addEventListener('visibilitychange', relance);
+    CO.on('view', (v) => { vue = v; regler(); });
+    CO.on('ouverture', () => { ouverte = true; regler(); });
+    document.addEventListener('visibilitychange', regler);
     return {
-      anime(a, el) {
+      anime(a, el, o) {
         const t = el || (a && a.effect && a.effect.target);
         if (!a || !t) return a;
+        const s = scene(t);
+        if (native(a)) { // le navigateur la joue : seulement la pause quand la scène ne se voit pas
+          s.natives.add(a);
+          if (!active(s) && a.playState === 'running') { a.pause(); s.pausees.add(a); }
+          return a;
+        }
         a.pause();
-        scene(t).anims.add(a);
+        s.anims.set(a, { pas: o && o.ips ? 1000 / o.ips : PAS, reste: 0 });
         relance();
         return a;
       },
@@ -279,9 +321,15 @@
         relance();
       },
       visible(el) {
-        if (document.hidden) return false;
+        if (document.hidden || couverte()) return false;
         const s = scenes.get(el);
         return s ? active(s) : true;
+      },
+      quand(el, fn) {
+        if (!el || typeof fn !== 'function') return () => {};
+        const s = scene(el);
+        s.ecoutes.add(fn);
+        return () => s.ecoutes.delete(fn);
       },
     };
   })();

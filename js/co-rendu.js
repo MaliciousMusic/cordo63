@@ -35,17 +35,31 @@
    Tout calcul est un générateur : R.lancer(gen, { prio, cle }) le découpe en tranches de quelques
    millisecondes (le fil principal ne gèle jamais) ; R.finir(gen) le mène au bout d'une traite.
    Un générateur peut céder une promesse (le chargement d'une police) : on l'attend avant de reprendre.
+   Un pas (d'un yield au suivant) ne dure jamais plus de R.TRANCHE ms, quelle que soit la vitesse du
+   téléphone : l'ordonnanceur lui donne une échéance (R.echeance), les grandes boucles la consultent à
+   chaque ligne (R.assez()) et cèdent dès qu'elle est passée.
    ========================================================================== */
 (function () {
   'use strict';
   const CO = (window.CO = window.CO || {});
   if (CO.R && CO.R.rendre) return;
   const R = (CO.R = CO.R || {});
-  R.VERSION = 'etabli-1';
+  R.VERSION = 'etabli-2'; // (2 : les sprites gardés tels quels, plus en PNG)
 
   const TAU = Math.PI * 2;
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   R.now = now;
+
+  /* ---------- la tranche : l'échéance du pas en cours ----------
+     L'ordonnanceur (R.lancer, et celui des mains : CO.Mains.calcul) la fixe avant chaque pas ; sans lui (R.finir,
+     un banc d'essai) elle est lointaine ou dépassée : on va d'une traite, ou l'on cède souvent, sans dommage. */
+  R.TRANCHE = 4; // ms : la durée maximale d'un pas
+  let echeance = 0;
+  /** l'échéance du pas qui commence : dans ms millisecondes (par défaut R.TRANCHE) */
+  R.echeance = (ms) => { echeance = now() + (ms == null ? R.TRANCHE : ms); };
+  /** l'échéance est-elle passée ? (à consulter à chaque ligne : on cède alors la main) */
+  const assez = () => now() > echeance;
+  R.assez = assez;
   const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const sstep = (a, b, x) => {
     const t = (x - a) / (b - a);
@@ -196,7 +210,7 @@
           const u = n00 + sx * (n10 - n00), v = n01 + sx * (n11 - n01);
           T[y * TN + x] += amp * (u + sy * (v - u)) * 1.45;
         }
-        if ((y & 63) === 63) yield;
+        if (assez()) yield;
       }
       norm += amp;
       amp *= gain;
@@ -244,7 +258,7 @@
         F2[i] = Math.sqrt(d2);
         ID[i] = hash2(id, variante, 7);
       }
-      if ((y & 31) === 31) yield;
+      if (assez()) yield;
     }
     C = { F1, F2, ID, per };
     CELLS.set(key, C);
@@ -295,13 +309,13 @@
     // (octets : un octet par pixel au lieu d'un flottant — les grands calques, quatre fois moins de mémoire)
     const data = octets ? new Uint8Array(w * h) : new Float32Array(w * h);
     const kd = octets ? 1 : 1 / 255;
-    const bande = Math.max(1, Math.floor(160000 / w));
+    const bande = Math.max(1, Math.floor(40000 / w));
     for (let j = 0; j < h; j += bande) {
       const hb = Math.min(bande, h - j);
       const d = g.getImageData(0, j, w, hb).data;
       const o = j * w;
       for (let i = 0, n = w * hb; i < n; i++) data[o + i] = d[i * 4 + canal] * kd;
-      yield;
+      if (assez()) yield;
     }
     return grille(data, w, h, x0, y0, res, 0, octets ? 1 / 255 : 1);
   };
@@ -323,11 +337,11 @@
     if (it && typeof it.next === 'function') yield* it; // un dessin peut se découper lui-même
     yield 'image:lecture';
     const d = new Uint8ClampedArray(w * h * 4);
-    const bande = Math.max(1, Math.floor(120000 / w));
+    const bande = Math.max(1, Math.floor(40000 / w));
     for (let j = 0; j < h; j += bande) {
       const hb = Math.min(bande, h - j);
       d.set(g.getImageData(0, j, w, hb).data, j * w * 4);
-      yield;
+      if (assez()) yield;
     }
     const W1 = w - 1, H1 = h - 1, P = R.PX;
     return {
@@ -406,14 +420,14 @@
       for (let y = 0; y < h; y++) f[y] = src[y * w + x] ? 0 : INF;
       edt1(f, h, d, v, z);
       for (let y = 0; y < h; y++) out[y * w + x] = d[y];
-      if ((x & 31) === 31) yield;
+      if ((x & 3) === 3 && assez()) yield;
     }
     for (let y = 0; y < h; y++) {
       const r = y * w;
       for (let x = 0; x < w; x++) f[x] = out[r + x];
       edt1(f, w, d, v, z);
       for (let x = 0; x < w; x++) out[r + x] = d[x];
-      if ((y & 31) === 31) yield;
+      if ((y & 3) === 3 && assez()) yield;
     }
   }
   /**
@@ -435,12 +449,15 @@
     yield* edt2(dedans, w, h, dOut);
     yield* edt2(dehors, w, h, dIn);
     const sd = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const c = cov[i];
-      let v;
-      if (c > 0.02 && c < 0.98) v = 0.5 - c;
-      else v = dedans[i] ? -(Math.sqrt(dIn[i]) - 0.5) : Math.sqrt(dOut[i]) - 0.5;
-      sd[i] = v / res;
+    for (let j = 0; j < h; j++) {
+      for (let i = j * w, i1 = i + w; i < i1; i++) {
+        const c = cov[i];
+        let v;
+        if (c > 0.02 && c < 0.98) v = 0.5 - c;
+        else v = dedans[i] ? -(Math.sqrt(dIn[i]) - 0.5) : Math.sqrt(dOut[i]) - 0.5;
+        sd[i] = v / res;
+      }
+      if ((j & 7) === 7 && assez()) yield;
     }
     const G = grille(sd, w, h, box[0], box[1], res, 1);
     G.cov = M;
@@ -614,7 +631,7 @@
     }
   };
 
-  /* flou gaussien approché (trois boîtes), en place ; R.flouG : le même en générateur (une tranche par passe) */
+  /* flou gaussien approché (trois boîtes), en place ; R.flouG : le même en générateur (il cède entre deux lignes) */
   R.flouG = function* (a, w, h, sigma) {
     if (sigma < 0.35) return a;
     const wI = Math.sqrt((12 * sigma * sigma) / 3 + 1);
@@ -625,16 +642,14 @@
     for (let p = 0; p < 3; p++) {
       const r = Math.max(0, Math.round(((p < m ? wl : wl + 2) - 1) / 2));
       if (!r) continue;
-      boite(a, t, w, h, r, 1, w);
-      if (a.length > 150000) yield;
-      boite(t, a, h, w, r, w, 1);
-      if (a.length > 150000) yield;
+      yield* boite(a, t, w, h, r, 1, w);
+      yield* boite(t, a, h, w, r, w, 1);
     }
     return a;
   };
   R.flou = (a, w, h, sigma) => R.finir(R.flouG(a, w, h, sigma));
   // une passe de boîte le long des lignes (pas = 1, saut = w) ou des colonnes (pas = w, saut = 1)
-  function boite(src, dst, n1, n2, r, pas, saut) {
+  function* boite(src, dst, n1, n2, r, pas, saut) {
     const iv = 1 / (r + r + 1);
     for (let l = 0; l < n2; l++) {
       const o = l * saut;
@@ -646,6 +661,7 @@
         const pa = x + r + 1, pr = x - r;
         acc += (pa < n1 ? src[o + pa * pas] : last) - (pr > 0 ? src[o + pr * pas] : first);
       }
+      if ((l & 15) === 15 && assez()) yield;
     }
   }
 
@@ -654,9 +670,12 @@
     const b = Float32Array.from(Hf);
     yield* R.flouG(b, w, h, r * k);
     const ao = new Float32Array(w * h);
-    for (let i = 0, n = w * h; i < n; i++) {
-      const c = b[i] - Hf[i];
-      ao[i] = c > 0 ? Math.max(0, 1 - c * force) : 1;
+    for (let j = 0; j < h; j++) {
+      for (let i = j * w, n = i + w; i < n; i++) {
+        const c = b[i] - Hf[i];
+        ao[i] = c > 0 ? Math.max(0, 1 - c * force) : 1;
+      }
+      if ((j & 15) === 15 && assez()) yield;
     }
     return ao;
   };
@@ -699,7 +718,7 @@
           out[i] = 1 - x * x * (3 - 2 * x);
         }
       }
-      if ((s & 31) === 31 && n1 * n2 > 120000) yield;
+      if ((s & 3) === 3 && assez()) yield;
     }
     return out;
   };
@@ -1036,13 +1055,18 @@
     jeu.v = v;
     return jeu;
   }
+  // (un jeu pèse 68 octets par pixel : on ne garde que deux jeux d'objets, 27 Mo au plus ; ceux d'un fond plein
+  // écran, 80 Mo et plus, retournent à la mémoire tout de suite — sur un iPhone, la mémoire est comptée)
+  const RESERVE_MAX = 200000;
   function rendre_(jeu) {
     if (!jeu || jeu.rendu) return;
     jeu.rendu = true;
     delete jeu.v;
-    RESERVE.push(jeu);
-    RESERVE.sort((a, b) => b.cap - a.cap);
-    while (RESERVE.length > 3) RESERVE.pop();
+    if (jeu.cap <= RESERVE_MAX) {
+      RESERVE.push(jeu);
+      RESERVE.sort((a, b) => b.cap - a.cap);
+      while (RESERVE.length > 2) RESERVE.pop();
+    }
     jeu.rendu = false;
   }
 
@@ -1102,7 +1126,7 @@
           }
         }
       }
-      if ((k & 15) === 15) yield;
+      if (assez()) yield;
     }
     // passe 2 : une peinture par pixel
     const f = part.f, H = B.H, A = B.A;
@@ -1130,7 +1154,7 @@
         f(TT[q], u < -1 ? -1 : u > 1 ? 1 : u, S, qq);
         melange(B, id, S, c);
       }
-      if ((j & 31) === 31) yield;
+      if (assez()) yield;
     }
   }
 
@@ -1141,7 +1165,10 @@
    *   cavite [r, force] | false, soleil (pénombre mm) | false, wrap, sol ([r, g, b] linéaire),
    *   lumiere(X, Y) (facultatif : facteur local de la lumière directe, repère du monde),
    *   ombre : { opacite, doux, contact, ppmS } | false, opaque (fond : alpha = 1 partout)
-   * → sprite { canvas, ombre, w, h, ax, ay, ppm, angle, t }
+   *   apres(img) (facultatif : générateur) : retouche l'image éclairée (ImageData) avant qu'elle n'aille dans le
+   *     canvas — aucune relecture de pixels (sur la carte graphique, une relecture coûte cher)
+   * → sprite { canvas, ombre, w, h, ax, ay, ppm, angle, t } ; sp._brut : ses pixels (ImageData, ceux de l'ombre),
+   *   gardés pour la mémoire du téléphone (R.emballer les range tels quels, sans encodage, puis les oublie)
    */
   R.rendre = function* (spec) {
     const t0 = now();
@@ -1171,8 +1198,8 @@
     const jeu = yield* prendre(n);
     const B = Object.assign({ w, h, n, ppm, ca, sa, bx0, by0, S }, jeu.v);
     yield 'couches';
-    // --- les couches
-    let cnt = 0;
+    // --- les couches (une ligne large se peint par morceaux : chaque pixel est indépendant des autres)
+    const MORCEAU = 256;
     for (const part of spec.couches) {
       if (!part) continue;
       if (part.tube) {
@@ -1193,10 +1220,11 @@
         ja = Math.max(0, Math.floor((my0 - by0) * ppm) - 1);
         jb = Math.min(h, Math.ceil((my1 - by0) * ppm) + 1);
       }
-      const larg = Math.max(1, ib - ia), pas = Math.max(1, Math.round(2400 / larg));
       for (let j = ja; j < jb; j++) {
-        ligne(B, part, j, ia, ib);
-        if (++cnt % pas === 0) yield;
+        for (let i0 = ia; i0 < ib; i0 += MORCEAU) {
+          ligne(B, part, j, i0, Math.min(ib, i0 + MORCEAU));
+          if (assez()) yield;
+        }
       }
       yield;
     }
@@ -1205,12 +1233,11 @@
     yield 'relief';
     // --- relief
     let t1 = now();
-    if (spec.adoucir) R.flou(B.H, w, h, spec.adoucir * ppm);
+    if (spec.adoucir) yield* R.flouG(B.H, w, h, spec.adoucir * ppm);
     const N = { nx: B.nx, ny: B.ny, nz: B.nz };
-    const bande = Math.max(4, Math.round(60000 / w));
-    for (let j = 0; j < h; j += bande) {
-      R.normales(B.H, w, h, ppm, N, j, Math.min(h, j + bande), spec.opaque ? null : B.A);
-      yield;
+    for (let j = 0; j < h; j += 4) {
+      R.normales(B.H, w, h, ppm, N, j, Math.min(h, j + 4), spec.opaque ? null : B.A);
+      if (assez()) yield;
     }
     yield 'cavite';
     if (spec.cavite !== false) {
@@ -1229,28 +1256,44 @@
       for (let j = 0; j < h; j++) {
         const Y = by0 + (j + 0.5) * ip;
         for (let i = 0; i < w; i++) lumi[j * w + i] = spec.lumiere(bx0 + (i + 0.5) * ip, Y);
+        if (assez()) yield;
       }
       yield;
     }
     T.relief = now() - t1;
-    // --- la lumière
+    // --- la lumière : dans une seule image (l'éventuelle retouche la reprend), posée dans le canvas par bandes
     t1 = now();
     yield* R.tablesEnv(spec.sol);
-    const bandeL = Math.max(2, Math.round(12000 / w));
     const c = R.canvas(w, h), gc = c.getContext('2d');
+    const img = gc.createImageData(w, h);
     const O = {
       w, h, alb: B.alb, alpha: spec.opaque ? null : B.A, nx: N.nx, ny: N.ny, nz: N.nz,
       ro: B.ro, me: B.me, f0: B.f0, ao: B.ao, sh: B.sh, ev: B.ev, an: B.an, gx: B.gx, gy: B.gy,
-      vis, sol: spec.sol, wrap: spec.wrap, lumiere: lumi,
+      vis, sol: spec.sol, wrap: spec.wrap, lumiere: lumi, img, decal: 0,
       oeil: spec.oeil === false ? null : { x0: bx0 - (spec.oeil ? spec.oeil.x : 0), y0: by0 - (spec.oeil ? spec.oeil.y : 0), ppm, D: spec.oeil && spec.oeil.D },
     };
-    for (let j = 0; j < h; j += bandeL) {
-      const j1 = Math.min(h, j + bandeL);
-      O.img = gc.createImageData(w, j1 - j);
-      O.decal = j;
+    let jPose = 0; // les lignes déjà posées dans le canvas
+    const poser = (jusqua) => {
+      if (jusqua > jPose) gc.putImageData(img, 0, 0, 0, jPose, w, jusqua - jPose);
+      jPose = jusqua;
+    };
+    for (let j = 0; j < h;) {
+      const j1 = Math.min(h, j + 2);
       R.eclairer(O, j, j1);
-      gc.putImageData(O.img, 0, j);
-      yield;
+      j = j1;
+      if (j === h || assez()) {
+        if (!spec.apres) poser(j);
+        yield;
+      }
+    }
+    if (spec.apres) {
+      yield 'apres';
+      yield* spec.apres(img);
+      for (let j = 0; j < h;) {
+        j = Math.min(h, j + Math.max(8, Math.round(40000 / w)));
+        poser(j);
+        if (assez()) yield;
+      }
     }
     T.lumiere = now() - t1;
     if (spec.ombre === false || spec.cadre) rendre_(jeu);
@@ -1270,6 +1313,7 @@
     return {
       canvas: c, ombre, w: w / ppm, h: h / ppm, ax: -bx0, ay: -by0, ppm, angle: ang, t: T,
       haut: spec.haut || 0, px: n, ombreOpts: spec.ombre || {},
+      _brut: img,
     };
   };
 
@@ -1286,7 +1330,10 @@
   /** Réduit l'objet en basse résolution (couverture moyenne, hauteur maximale) avec les marges de l'ombre */
   R.ombreBasse = function* (Hf, A, w, h, ppm, o = {}) {
     let zmax = 0;
-    for (let i = 0; i < w * h; i++) if (A[i] > 0.3 && Hf[i] > zmax) zmax = Hf[i];
+    for (let j = 0; j < h; j++) {
+      for (let i = j * w, n = i + w; i < n; i++) if (A[i] > 0.3 && Hf[i] > zmax) zmax = Hf[i];
+      if ((j & 15) === 15 && assez()) yield;
+    }
     // l'ombre est douce : ≈ 1 px/mm pour un objet plat, moins pour un objet haut (sa pénombre est large)
     const ps = Math.min(ppm, o.ppmS || (zmax > 40 ? 0.5 : zmax > 9 ? 0.72 : 1.0));
     const k = ppm / ps;
@@ -1312,6 +1359,7 @@
         const z = Hf[j * w + i];
         if (a > 0.25 && z > Z2[q]) Z2[q] = z;
       }
+      if ((j & 7) === 7 && assez()) yield;
     }
     for (let i = 0; i < w2 * h2; i++) if (A2[i] > 1) A2[i] = 1;
     yield;
@@ -1370,6 +1418,7 @@
               if (zz <= zq) { if (zz <= zq - 0.4) continue; v = a * (zz - zq + 0.4) * 2.5; }
               if (v > U[rd + i]) U[rd + i] = v;
             }
+            if ((j & 7) === 7 && assez()) yield;
           }
           if ((q & 7) === 7) yield;
         }
@@ -1382,9 +1431,12 @@
         const tmp = new Float32Array(cw * ch);
         for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) tmp[j * cw + i] = U[(j + cy0) * w2 + i + cx0];
         yield* R.flouG(tmp, cw, ch, sg);
-        for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
-          const id = (j + cy0) * w2 + i + cx0, v = tmp[j * cw + i];
-          if (v > O[id]) O[id] = v;
+        for (let j = 0; j < ch; j++) {
+          for (let i = 0; i < cw; i++) {
+            const id = (j + cy0) * w2 + i + cx0, v = tmp[j * cw + i];
+            if (v > O[id]) O[id] = v;
+          }
+          if ((j & 15) === 15 && assez()) yield;
         }
         yield;
         gi = gj + 1;
@@ -1402,17 +1454,31 @@
     yield;
     const c = R.canvas(w2, h2), g = c.getContext('2d');
     const img = g.createImageData(w2, h2), d = img.data;
+    const al = new Uint8ClampedArray(n); // (son opacité seule, gardée : les ombres soulevées s'en servent sans relire le canvas)
     const [r0, g0, b0] = R.OMBRE_RGB;
-    for (let i = 0; i < n; i++) {
-      let v = O[i] * opacite + C[i] * contact + AOb[i] * 0.3;
-      v = v > 0.92 ? 0.92 : v;
-      const q = i * 4;
-      d[q] = r0; d[q + 1] = g0; d[q + 2] = b0; d[q + 3] = v * 255;
+    for (let j = 0; j < h2; j++) {
+      for (let i = j * w2, i1 = i + w2; i < i1; i++) {
+        let v = O[i] * opacite + C[i] * contact + AOb[i] * 0.3;
+        v = v > 0.92 ? 0.92 : v;
+        const q = i * 4;
+        d[q] = r0; d[q + 1] = g0; d[q + 2] = b0; d[q + 3] = v * 255;
+        al[i] = v * 255;
+      }
+      if ((j & 15) === 15 && assez()) yield;
     }
     g.putImageData(img, 0, 0);
     // placement : le coin haut-gauche de l'ombre, en mm, relatif au coin haut-gauche du canvas de l'objet
-    return { canvas: c, x: -ox / pk, y: -oy / pk, k, pk, w: w2 / pk, h: h2 / pk };
+    return { canvas: c, x: -ox / pk, y: -oy / pk, k, pk, w: w2 / pk, h: h2 / pk, _a: al };
   };
+  /** une ombre (canvas basse résolution) d'après son opacité seule (la couleur des ombres est la même partout) */
+  function ombreDepuis(al, w, h) {
+    const c = R.canvas(w, h), g = c.getContext('2d');
+    const img = g.createImageData(w, h), d = img.data;
+    const [r0, g0, b0] = R.OMBRE_RGB;
+    for (let i = 0, n = w * h; i < n; i++) { const q = i * 4; d[q] = r0; d[q + 1] = g0; d[q + 2] = b0; d[q + 3] = al[i]; }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
 
   /**
    * L'ombre d'un sprite soulevé de `levee` mm (animations : l'objet tombe, se soulève) : la même, adoucie
@@ -1425,17 +1491,23 @@
     const q = Math.round(levee / 5) * 5;
     if (q <= 0) return o0;
     sp._levees = sp._levees || new Map();
-    let o = sp._levees.get(q);
-    if (o) return o;
-    const src = o0.canvas, w = src.width, h = src.height;
+    const o = sp._levees.get(q);
+    return o || R.finir(leveeG(sp, q));
+  };
+  /* l'ombre soulevée de q mm (générateur) ; l'opacité de l'ombre est gardée avec elle (o0._a) : pas de relecture */
+  function* leveeG(sp, q) {
+    const o0 = sp.ombre, src = o0.canvas, w = src.width, h = src.height;
     const sg = sigmaDe(q, sp.ombreOpts && sp.ombreOpts.doux || 1) * 0.8 * o0.pk;
     const pad = Math.ceil(sg * 2.5);
     const W = w + 2 * pad, H = h + 2 * pad;
-    const g0 = src.getContext('2d', { willReadFrequently: true });
-    const d0 = g0.getImageData(0, 0, w, h).data;
-    const a = new Float32Array(W * H);
-    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) a[(j + pad) * W + i + pad] = d0[(j * w + i) * 4 + 3] / 255;
-    R.flou(a, W, H, sg);
+    if (!o0._a) { // (une ombre venue d'ailleurs : on la relit une fois)
+      const d0 = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+      o0._a = new Uint8ClampedArray(w * h);
+      for (let i = 0; i < w * h; i++) o0._a[i] = d0[i * 4 + 3];
+    }
+    const a0 = o0._a, a = new Float32Array(W * H);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) a[(j + pad) * W + i + pad] = a0[j * w + i] / 255;
+    yield* R.flouG(a, W, H, sg);
     const c = R.canvas(W, H), g = c.getContext('2d');
     const img = g.createImageData(W, H), d = img.data;
     const [r0, g1, b0] = R.OMBRE_RGB;
@@ -1444,9 +1516,19 @@
       d[i * 4] = r0; d[i * 4 + 1] = g1; d[i * 4 + 2] = b0; d[i * 4 + 3] = a[i] * k * 255;
     }
     g.putImageData(img, 0, 0);
-    o = { canvas: c, x: o0.x - pad / o0.pk, y: o0.y - pad / o0.pk, k: o0.k, pk: o0.pk, w: W / o0.pk, h: H / o0.pk };
+    const o = { canvas: c, x: o0.x - pad / o0.pk, y: o0.y - pad / o0.pk, k: o0.k, pk: o0.pk, w: W / o0.pk, h: H / o0.pk };
+    sp._levees = sp._levees || new Map();
     sp._levees.set(q, o);
     return o;
+  }
+  /** les ombres soulevées d'un sprite jusqu'à max mm, d'avance (générateur, par tranches) : une animation qui le
+      soulève ne calcule plus rien */
+  R.leveesG = function* (sp, max = 55) {
+    if (!sp || !sp.ombre) return;
+    for (let q = 5; q <= max; q += 5) {
+      if (!(sp._levees && sp._levees.has(q))) yield* leveeG(sp, q);
+      yield;
+    }
   };
 
   /* ======================================================================
@@ -1544,39 +1626,78 @@
      10. L'ordonnanceur : les calculs par tranches (le fil principal ne gèle jamais)
      ====================================================================== */
   R.BUDGET = 8; // ms par tranche
+  R.DOUX = 6; // ms par image, pour les calculs « en douceur » (0 < prio < 1)
   const file = [];
   const parCle = new Map();
-  let prevu = 0, enPause = false, seq = 0, enCours = null;
+  const attente = new Set(); // les calculs qui attendent une promesse (une police, la mémoire du téléphone)
+  let prevuMsg = false, prevuIdle = false, prevuDoux = false, enPause = false, seq = 0;
   const canal = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
-  if (canal) canal.port1.onmessage = () => { prevu = 0; tourner(null); };
+  if (canal) canal.port1.onmessage = () => { prevuMsg = false; tourner(2, null); };
   R.stats = { pasMax: 0, tranches: 0, cpu: 0 };
+  /** trois façons de passer : 0 aux temps morts (prio ≤ 0), 1 en douceur (une tranche par image, 0 < prio < 1),
+      2 tout de suite (prio ≥ 1) */
+  const classe = (p) => (p <= 0 ? 0 : p < 1 ? 1 : 2);
+  R.classe = classe;
+  /** fn() juste après la prochaine image (ce qui reste du temps de cette image : le calcul n'en retarde aucune) */
+  R.apresImage = (fn) => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(() => setTimeout(fn, 0)) : setTimeout(fn, 16));
 
+  /**
+   * Les temps morts : fn({ timeRemaining(), didTimeout }) quand le fil principal n'a rien de mieux à faire.
+   * requestIdleCallback s'il existe ; sinon (Safari) juste après une image, avec ce qui reste avant la suivante
+   * (rien si l'image a été lourde : on réessaie à la suivante ; au-delà de `delai` ms, une tranche quand même).
+   * Rien ne tourne quand la page est cachée (plus d'images).
+   */
+  R.inactif = function (fn, delai = 1200) {
+    if (typeof requestIdleCallback !== 'undefined') return requestIdleCallback(fn, { timeout: delai });
+    if (typeof requestAnimationFrame === 'undefined') return setTimeout(() => fn({ didTimeout: true, timeRemaining: () => 0 }), 50);
+    const t0 = now();
+    let der = 0;
+    const essai = () => requestAnimationFrame((tf) => {
+      const periode = der && tf - der > 4 && tf - der < 40 ? tf - der : 1000 / 60;
+      der = tf;
+      const fin = tf + periode * 0.72; // (l'image suivante a besoin du reste)
+      setTimeout(() => {
+        if (fin - now() > 2) fn({ didTimeout: false, timeRemaining: () => Math.max(0, fin - now()) });
+        else if (now() - t0 > delai) fn({ didTimeout: true, timeRemaining: () => 0 });
+        else essai();
+      }, 0);
+    });
+    essai();
+    return 0;
+  };
+
+  /* trois files de passage (voir classe) : tout de suite, une tâche après l'autre (l'image passe entre deux) ; en
+     douceur, une tranche juste après chaque image ; aux temps morts seulement (R.inactif), dans leur échéance */
   function planifier() {
-    if (prevu || enPause || !file.length || enCours) return;
-    const tete = file[0];
-    if (tete.prio <= 0 && typeof requestIdleCallback !== 'undefined') {
-      prevu = 2;
-      requestIdleCallback((dl) => { prevu = 0; tourner(dl); }, { timeout: 1200 });
-    } else if (canal) {
-      prevu = 1;
-      canal.port2.postMessage(0);
-    } else {
-      prevu = 1;
-      setTimeout(() => { prevu = 0; tourner(null); }, 0);
+    if (enPause || !file.length) return;
+    const c = classe(file[0].prio);
+    if (c === 0) {
+      if (!prevuIdle) { prevuIdle = true; R.inactif((dl) => { prevuIdle = false; tourner(0, dl); }); }
+    } else if (c === 1) {
+      if (!prevuDoux) { prevuDoux = true; R.apresImage(() => { prevuDoux = false; tourner(1, null); }); }
+    } else if (!prevuMsg) {
+      prevuMsg = true;
+      if (canal) canal.port2.postMessage(0);
+      else setTimeout(() => { prevuMsg = false; tourner(2, null); }, 0);
     }
   }
   function trier() {
     file.sort((a, b) => b.prio - a.prio || a.n - b.n);
   }
-  function tourner(dl) {
-    if (enPause || enCours) return;
+  function tourner(c, dl) {
+    if (enPause) return;
     const t0 = now();
-    let budget = R.BUDGET;
-    if (dl && dl.timeRemaining && !dl.didTimeout) budget = Math.max(3, Math.min(R.BUDGET, dl.timeRemaining() - 1));
+    // aux temps morts : l'échéance du navigateur, tenue (au-delà d'1,2 s d'attente, une tranche normale)
+    const inactif = c === 0 && !!(dl && dl.timeRemaining && !dl.didTimeout);
+    const fin = t0 + (inactif ? Math.min(R.BUDGET, dl.timeRemaining() - 1) : c === 1 ? R.DOUX : R.BUDGET);
     R.stats.tranches++;
-    while (file.length && now() - t0 < budget) {
+    while (file.length) {
       const job = file[0];
+      if (classe(job.prio) !== c) break; // (ce n'est pas sa file : planifier() s'en charge)
+      const reste = fin - now();
+      if (reste < (inactif ? 1 : 0.5)) break;
       const ta = now();
+      echeance = ta + Math.min(R.TRANCHE, reste);
       const etape = job.etape;
       let r;
       try {
@@ -1601,24 +1722,24 @@
         continue;
       }
       if (r.value && typeof r.value.then === 'function') {
-        // une promesse (police à charger…) : on la laisse se résoudre, les autres calculs continuent
-        enCours = job;
+        // une promesse (police à charger, mémoire du téléphone…) : on la laisse se résoudre, les autres calculs continuent
         file.shift();
+        attente.add(job);
         r.value.then((v) => { job.retour = v; }, () => {}).then(() => {
-          enCours = null;
+          attente.delete(job);
           file.push(job);
           trier();
           planifier();
         });
-        break;
       }
     }
     planifier();
   }
   /**
-   * Lance un calcul découpé en tranches. gen : un générateur ; prio : > 0 tout de suite (tranches de 8 ms
-   * entre deux images), ≤ 0 aux temps morts (requestIdleCallback) ; cle : un même calcul demandé deux fois
-   * n'est fait qu'une fois (et sa priorité monte). → Promise du résultat (job.cpu : temps de calcul total).
+   * Lance un calcul découpé en tranches. gen : un générateur ; prio : ≥ 1 tout de suite (tranches de 8 ms
+   * entre deux images), entre 0 et 1 en douceur (une tranche de 6 ms après chaque image), ≤ 0 aux temps morts
+   * (R.inactif) ; cle : un même calcul demandé deux fois n'est fait qu'une fois (et sa priorité monte).
+   * → Promise du résultat (job.cpu : temps de calcul total).
    */
   R.lancer = function (gen, { prio = 1, cle = null } = {}) {
     if (cle && parCle.has(cle)) {
@@ -1636,18 +1757,30 @@
     planifier();
     return promise;
   };
+  /** un calcul déjà lancé passe devant (prio plus haute) : on en a besoin maintenant */
+  R.presser = function (promesse, prio = 3) {
+    const j = promesse && promesse.job;
+    if (j && prio > j.prio) { j.prio = prio; trier(); planifier(); }
+    return promesse;
+  };
   /** Mène un générateur au bout, d'une traite (banc d'essai, planche) */
   R.finir = function (gen) {
-    let r = gen.next();
-    while (!r.done) r = gen.next();
-    return r.value;
+    const e0 = echeance;
+    echeance = Infinity; // (d'une traite : les boucles ne cèdent pas)
+    try {
+      let r = gen.next();
+      while (!r.done) r = gen.next();
+      return r.value;
+    } finally {
+      echeance = e0;
+    }
   };
   /** Suspend / reprend les calculs (l'établi n'est plus à l'écran : rien ne tourne) */
   R.pause = function (v) {
     enPause = !!v;
     if (!enPause) planifier();
   };
-  R.enAttente = () => file.length + (enCours ? 1 : 0);
+  R.enAttente = () => file.length + attente.size;
 
   /* ======================================================================
      11. Le cache : mémoire (Map bornée) et le téléphone (IndexedDB, comme kk-bake.js)
@@ -1662,6 +1795,7 @@
       return v;
     },
     set(k, v) {
+      if (v && v._brut) v._brut = null; // (les pixels gardés pour le téléphone y sont déjà : R.emballer les prend aussitôt)
       if (CACHE.has(k)) return v;
       CACHE.set(k, v);
       cachePx += v.px || 0;
@@ -1677,8 +1811,10 @@
     vider() { CACHE.clear(); cachePx = 0; },
   };
 
-  /* la mémoire du téléphone : une image calculée une fois y est gardée (PNG) ; aux visites suivantes elle
-     revient en quelques millisecondes. Clés préfixées par la version : une nouvelle version repart de zéro. */
+  /* la mémoire du téléphone : une image calculée une fois y est gardée ; aux visites suivantes elle revient en
+     quelques millisecondes. Ce qui sort de R.rendre y va tel quel (ses pixels, sans encodage ni relecture : à
+     l'octet près) ; une image composée ailleurs, en PNG, aux temps morts. Clés préfixées par la version : une
+     nouvelle version repart de zéro. */
   const SELF = !DANS_WORKER && document.currentScript ? document.currentScript.src : '';
   const VERSION = R.VERSION + ':' + ((SELF.match(/[?&]v=([^&#]+)/) || [])[1] || 'dev');
   R.coffre = (() => {
@@ -1762,39 +1898,76 @@
       return null;
     }
   };
-  /** Un sprite → ce qu'on garde dans le téléphone (deux PNG + les mesures) */
+  /** ce qu'on range d'une image : ses pixels si on les a (img : ImageData), sinon un PNG fait aux temps morts */
+  R.versCoffre = function (c, img) {
+    if (img) return Promise.resolve({ brut: true, w: img.width, h: img.height, d: img.data });
+    return new Promise((res) => R.inactif(() => R.versPNG(c).then(res, () => res(null)), 4000));
+  };
+  /** ce qu'on a rangé → canvas (null si impossible) */
+  R.deCoffre = async function (v) {
+    if (!v) return null;
+    if (v.brut) {
+      try {
+        const c = R.canvas(v.w, v.h);
+        c.getContext('2d').putImageData(new ImageData(v.d, v.w, v.h), 0, 0);
+        return c;
+      } catch (e) { return null; }
+    }
+    return R.dePNG(v);
+  };
+  /** Un sprite → ce qu'on garde dans le téléphone : ses pixels et l'opacité de son ombre (sinon deux PNG), les mesures */
   R.emballer = async function (sp) {
-    const a = await R.versPNG(sp.canvas);
-    const b = sp.ombre ? await R.versPNG(sp.ombre.canvas) : null;
-    if (!a) return null;
     const o = sp.ombre;
-    return {
-      png: a, ombre: b,
-      m: { w: sp.w, h: sp.h, ax: sp.ax, ay: sp.ay, ppm: sp.ppm, angle: sp.angle, haut: sp.haut, t: sp.t, ombreOpts: sp.ombreOpts,
-        ombre: o ? { x: o.x, y: o.y, k: o.k, pk: o.pk, w: o.w, h: o.h } : null },
-    };
+    const m = { w: sp.w, h: sp.h, ax: sp.ax, ay: sp.ay, ppm: sp.ppm, angle: sp.angle, haut: sp.haut, t: sp.t, ombreOpts: sp.ombreOpts,
+      ombre: o ? { x: o.x, y: o.y, k: o.k, pk: o.pk, w: o.w, h: o.h } : null };
+    if (sp._brut) {
+      const img = sp._brut;
+      sp._brut = null; // (gardés pour le téléphone seulement : ils retournent à la mémoire)
+      return {
+        brut: { brut: true, w: img.width, h: img.height, d: img.data },
+        ombreA: o && o._a ? { w: o.canvas.width, h: o.canvas.height, a: o._a } : null,
+        ombre: o && !o._a ? await R.versCoffre(o.canvas) : null,
+        m,
+      };
+    }
+    const a = await R.versCoffre(sp.canvas);
+    const b = o ? await R.versCoffre(o.canvas) : null;
+    if (!a) return null;
+    return { png: a, ombre: b, m };
   };
   R.deballer = async function (v) {
-    if (!v || !v.png) return null;
-    const c = await R.dePNG(v.png);
+    if (!v || !(v.png || v.brut)) return null;
+    const c = await R.deCoffre(v.brut || v.png);
     if (!c) return null;
     const m = v.m;
     let ombre = null;
-    if (v.ombre && m.ombre) {
-      const oc = await R.dePNG(v.ombre);
+    if (m.ombre && v.ombreA) {
+      const A = v.ombreA;
+      ombre = Object.assign({ canvas: ombreDepuis(A.a, A.w, A.h), _a: A.a }, m.ombre);
+    } else if (v.ombre && m.ombre) {
+      const oc = await R.deCoffre(v.ombre);
       if (oc) ombre = Object.assign({ canvas: oc }, m.ombre);
     }
-    // les mesures d'abord, puis l'image et l'ombre rebâties (m.ombre, sans canvas, ne doit pas écraser l'ombre)
-    return Object.assign({}, m, { canvas: c, ombre, px: c.width * c.height, coffre: true });
+    // les mesures d'abord, puis l'image et l'ombre rebâties (m.ombre, sans canvas, ne doit pas écraser l'ombre) ;
+    // ses pixels restent un instant (le masque s'en sert ; R.cache.set les oublie)
+    const brut = v.brut ? new ImageData(v.brut.d, v.brut.w, v.brut.h) : null;
+    return Object.assign({}, m, { canvas: c, ombre, px: c.width * c.height, coffre: true, _brut: brut });
   };
 
-  /** Masque de couverture basse résolution d'un sprite (pour savoir quel objet on touche) */
-  R.masqueDe = function (sp) {
+  /** Masque de couverture basse résolution d'un sprite (pour savoir quel objet on touche) ; img : ses pixels (ImageData),
+      s'ils sont là — alors tout se fait sur le processeur, sans relire la carte graphique (relire un canvas pendant
+      qu'une animation l'occupe, c'était une tâche longue au toucher d'un service) */
+  R.masqueDe = function (sp, img) {
     if (sp._masque) return sp._masque;
     const k = Math.max(1, Math.round(sp.ppm / 1.5));
     const w = Math.max(1, Math.ceil(sp.canvas.width / k)), h = Math.max(1, Math.ceil(sp.canvas.height / k));
     const c = R.canvas(w, h), g = c.getContext('2d', { willReadFrequently: true });
-    g.drawImage(sp.canvas, 0, 0, w, h);
+    let src = sp.canvas;
+    if (img && img.width === sp.canvas.width && img.height === sp.canvas.height) {
+      src = R.canvas(img.width, img.height);
+      src.getContext('2d', { willReadFrequently: true }).putImageData(img, 0, 0);
+    }
+    g.drawImage(src, 0, 0, w, h);
     const d = g.getImageData(0, 0, w, h).data;
     const a = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) a[i] = d[i * 4 + 3];

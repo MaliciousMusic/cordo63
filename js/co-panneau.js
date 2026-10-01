@@ -6,7 +6,7 @@
    Il pend à deux chaînettes de laiton depuis le haut de l'écran (la vue commence déjà sous
    l'encoche : main est calé sur env(safe-area-inset-top)), reste en tête quand l'accueil
    défile et se balance : un pendule que poussent le défilement et les doigts (requestAnimationFrame
-   tant qu'il bouge), et au repos un souffle à peine, avancé par CO.ambiance (seulement à l'écran).
+   tant qu'il bouge), et au repos un souffle à peine, joué par le compositeur (en pause hors de l'écran).
    On le touche : derrière le soulier, trois volets repliés se déplient en accordéon (la semaine
    du lundi au dimanche, aujourd'hui surligné, la pause de midi ; l'adresse et le téléphone).
    On retouche, on touche ailleurs ou Échap : ils se replient. Le soir, une lampe col-de-cygne.
@@ -330,9 +330,13 @@
     }));
     if ('inert' in zone) zone.inert = true;
 
-    /* ---------- tailles (le soulier suit la largeur de la vue) ---------- */
+    /* ---------- tailles (le soulier suit la largeur de la vue) ----------
+       Mesuré dans le rappel de l'observateur de taille (la mise en page vient d'être faite : rien à forcer),
+       et seulement alors les ajustements du mot et de la petite ligne (pas de mise en page forcée à la création) */
     const G = { l: 186, s: 1, ox: 93, oy: 0, haut: 12, lv: 80 };
+    let mesure = false;
     function mesurer() {
+      mesure = true;
       const W = host.getBoundingClientRect().width || document.documentElement.clientWidth || 320;
       const l = Math.round(clamp(W * 0.58, 180, 236));
       root.style.setProperty('--pn-l', l + 'px');
@@ -352,6 +356,7 @@
       });
       volets.forEach((f) => { f.h = f.el.offsetHeight; });
       ajusterTables();
+      ajusterMot();
       ajusterLigne();
       appliquerCorps();
       appliquerVolets(T);
@@ -370,8 +375,7 @@
         face.setAttribute('fill', `url(#${u}${s.etat === 'ouvert' ? 'd' : s.etat === 'ferme' ? 'r' : 'k'})`);
         ligneEl.textContent = s.ligne;
         nomEl.textContent = s.texte + '. Horaires de la semaine, adresse et téléphone.';
-        ajusterMot();
-        ajusterLigne();
+        if (mesure) { ajusterMot(); ajusterLigne(); } // (sinon : à la première mesure)
       }
       const auj = (CO.parisNow ? CO.parisNow() : new Date()).toDateString();
       if (auj !== majJour) {
@@ -379,7 +383,7 @@
         const jours = semaine();
         feuille.innerHTML = tableHoraires(jours.slice(0, 4), 'Horaires de la semaine, du lundi au jeudi');
         suite.innerHTML = tableHoraires(jours.slice(4), 'Horaires de la semaine, du vendredi au dimanche') + `<p class="pn-note">${esc(noteHoraires(jours))}</p>`;
-        ajusterTables();
+        if (mesure) ajusterTables();
       }
       nuit(opts.nuit != null ? !!opts.nuit : estNuit());
     }
@@ -396,12 +400,23 @@
       });
       if (k < 1) root.style.setProperty('--pn-k', Math.max(0.7, k * 0.985).toFixed(3));
     }
-    // le grand mot tient dans le soulier (serré s'il le faut, une fois la police chargée)
+    // le grand mot tient dans le soulier (serré s'il le faut, une fois la police chargée) : sa largeur mesurée sur un
+    // canvas, dans la police calculée du mot, espacement des lettres compris (aucune mise en page à forcer)
+    let mesureur = null;
     function ajusterMot() {
-      textes.forEach((t) => { t.removeAttribute('textLength'); t.removeAttribute('lengthAdjust'); });
       let lg = 0;
-      try { lg = face.getComputedTextLength(); } catch (e) { return; }
-      if (lg > MOT.max) textes.forEach((t) => { t.setAttribute('textLength', MOT.max); t.setAttribute('lengthAdjust', 'spacingAndGlyphs'); });
+      try {
+        const cs = getComputedStyle(face), taille = parseFloat(cs.fontSize) || MOT.taille;
+        mesureur = mesureur || document.createElement('canvas').getContext('2d');
+        mesureur.font = `${cs.fontStyle === 'italic' ? 'italic ' : ''}${cs.fontWeight} ${taille}px ${cs.fontFamily}`;
+        const esp = parseFloat(cs.letterSpacing) || 0, mot = face.textContent || '';
+        lg = mesureur.measureText(mot).width + esp * mot.length;
+      } catch (e) { return; }
+      const serre = lg > MOT.max;
+      textes.forEach((t) => {
+        if (serre) { t.setAttribute('textLength', MOT.max); t.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+        else { t.removeAttribute('textLength'); t.removeAttribute('lengthAdjust'); }
+      });
     }
 
     // la petite ligne tient sur la plaquette (« réouvre mercredi 10h » après un jour de congé) : le corps se serre
@@ -650,7 +665,8 @@
     }
     (defil || window).addEventListener('scroll', surDefilement, { passive: true });
 
-    /* ---------- le souffle au repos (CO.ambiance : 24 images/s, seulement à l'écran) ---------- */
+    /* ---------- le souffle au repos (une rotation d'un élément HTML : le compositeur la joue ; CO.ambiance la met en
+       pause quand l'accueil ne se voit pas) ---------- */
     let souffle = null;
     function lancerSouffle() {
       if (reduit() || souffle || !balancier.animate) return;
@@ -692,13 +708,13 @@
       repli.forEach((c) => { c.hidden = false; });
     }
 
-    // démarrage
+    // démarrage (les mesures : au premier rappel de l'observateur de taille, juste après la mise en page ; sans lui, tout de suite)
     maj();
-    mesurer();
+    if (!ro) mesurer();
     lancerVolets(false, true);
     lancerSouffle();
     planifier();
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (!detruit) { ajusterMot(); mesurer(); } });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (!detruit && mesure) mesurer(); });
 
     return { el: root, maj, ouvrir, fermer, basculer, nuit: (v) => { opts.nuit = v; nuit(v); }, secouer, masquer, detruire, get ouvert() { return cibleOuvert; } };
   }

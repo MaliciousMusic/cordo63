@@ -1,0 +1,259 @@
+/* ==========================================================================
+   Cordo 63 — sur ordinateur : l'appli dans un téléphone, posé sur l'établi de Clément
+   L'établi vu de dessus : le plateau d'aggloméré brun, le grand tapis de découpe vert quadrillé au
+   centimètre (à l'échelle du téléphone : un écran de 15 cm), le téléphone posé dessus. À côté, la
+   présentation : la carte de la boutique (le logo sauge sur crème, un bout de ruban de masquage),
+   l'accroche, l'adresse et les horaires en étiquettes Dymo, le ticket jaune et son QR code.
+   Le téléphone : l'écran aux coins arrondis, le liseré de verre noir, le cadre de métal, les boutons sur
+   la tranche. .ecran est le bloc conteneur de tout ce qui est fixé dans l'appli (vues, barre d'onglets,
+   feuilles, toasts, dialogue de Clément, film, ouverture) : will-change le crée, et fait de l'écran un
+   calque à part (l'établi ne se repeint pas quand l'appli bouge) ; container-type : dans l'écran, les
+   unités cqw / cqh remplacent vw / vh (la hauteur de la devanture, les feuilles…). La barre d'état
+   (l'heure de Paris : js/co-app.js) et le trait du bas sont dessinés sur l'écran : --safe-t et --safe-b
+   leur font la place, comme sur un iPhone (pas d'encoche : rien ne mord sur l'enseigne-soulier).
+   Seuils : 760 px de large et 560 px de haut, le téléphone seul, centré ; 1000 px, la présentation à
+   côté. Plus bas que 560 px : l'appli en colonne de 480 px, comme avant.
+   Tout est statique : aucune animation, aucun calcul après le chargement (le logo, le QR et les
+   chiffres du tapis sont posés une fois par js/co-app.js, initBureau).
+   Sur téléphone (moins de 760 px), rien ici ne s'applique : les deux boîtes du téléphone sont vides de
+   style, leurs enfants restent fixés sur la fenêtre.
+   ========================================================================== */
+.bureau, .tel-etat, .tel-geste, .tel-tranche { display: none; }
+
+/* ======================================================================
+   Fenêtre large mais basse : l'appli en colonne au milieu
+   ====================================================================== */
+@media (min-width: 760px) and (max-height: 559.98px) {
+  body { background: #E4D8C3 var(--grain); }
+  .tabbar, main { left: 50%; right: auto; width: 480px; margin-left: -240px; }
+  main { background: var(--papier) var(--grain); box-shadow: 0 0 0 1px rgba(43, 36, 32, .1), 0 30px 80px -30px rgba(30, 24, 20, .5); }
+  .toast { bottom: 100px; }
+  #accueil { --logo-l: 330px; }
+}
+
+/* ======================================================================
+   Le téléphone sur l'établi
+   ====================================================================== */
+@media (min-width: 760px) and (min-height: 560px) {
+  :root {
+    --tel-h: min(880px, calc(100vh - clamp(40px, 8vh, 72px)));  /* l'écran : sa hauteur suit la fenêtre… */
+    --tel-w: clamp(320px, calc(var(--tel-h) * .56), 412px);     /* …sa largeur aussi (les proportions d'un téléphone) */
+    --tel-r: calc(var(--tel-w) * .115);                          /* les coins de l'écran */
+    --tel-bord: 12px;                                            /* autour : le liseré de verre noir et le cadre de métal */
+    --tel-W: calc(var(--tel-w) + 2 * var(--tel-bord));
+    --tel-H: calc(var(--tel-h) + 2 * var(--tel-bord));
+    --bureau-cm: calc(var(--tel-h) / 15);                        /* un centimètre de l'établi, à l'échelle du téléphone */
+    --bureau-groupe: var(--tel-W);                               /* ce qui est centré : le téléphone (et la présentation, plus large) */
+    --bureau-ecart: 0px;
+    /* l'aggloméré (le même que l'établi de Mes tickets, en plus sombre) */
+    --bureau-plateau:
+      radial-gradient(70% 60% at 22% 18%, rgba(150, 110, 76, .2), transparent 70%),
+      radial-gradient(60% 55% at 88% 86%, rgba(20, 12, 6, .38), transparent 70%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .78 0 0 0 0 .6 0 0 0 0 .42 0 0 0 2.4 -1.45'/%3E%3C/filter%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .08 0 0 0 0 .05 0 0 0 0 .03 0 0 0 2.6 -1.5'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23b)'/%3E%3Crect width='220' height='220' filter='url(%23a)'/%3E%3C/svg%3E"),
+      #4A382A;
+  }
+  @supports (height: 100dvh) { :root { --tel-h: min(880px, calc(100dvh - clamp(40px, 8dvh, 72px))); } }
+
+  /* la page : l'établi ; la présentation et le téléphone côte à côte, au milieu */
+  :root, :root.ouverture { background: var(--bureau-plateau); }
+  :root body, :root.ouverture body { background: transparent; }
+  body { display: flex; align-items: center; justify-content: center; gap: var(--bureau-ecart); }
+  body::after { content: none; } /* le voile sous l'heure : sur l'écran du téléphone (.ecran::before) */
+  /* l'écran tombe sur des pixels entiers (tailles paires, place arrondie) : son calque reste net, l'appli n'a pas de
+     largeur à virgule */
+  @supports (width: round(down, 1.5px, 1px)) {
+    :root {
+      --tel-h: round(down, min(880px, calc(100dvh - clamp(40px, 8dvh, 72px))), 2px);
+      --tel-w: round(down, clamp(320px, calc(var(--tel-h) * .56), 412px), 2px);
+    }
+    body { justify-content: flex-start; padding-left: max(0px, round(down, calc((100vw - var(--bureau-groupe)) / 2), 1px)); }
+    .telephone { align-self: flex-start; margin-top: max(0px, round(down, calc((100dvh - var(--tel-H)) / 2), 1px)); }
+  }
+
+  /* ---------- le téléphone : le cadre de métal (la bordure), le liseré de verre noir (le fond), l'ombre sur le tapis ---------- */
+  .telephone {
+    position: relative; z-index: 1; flex: none; box-sizing: border-box;
+    width: var(--tel-W); height: var(--tel-H); padding: calc(var(--tel-bord) - 3px);
+    border: 3px solid transparent; border-radius: calc(var(--tel-r) + var(--tel-bord));
+    background:
+      linear-gradient(#070708, #070708) padding-box,
+      linear-gradient(145deg, #9C9FA4, #45474C 18%, #2A2B2F 42%, #5D6065 64%, #2B2C30 82%, #8B8E93) border-box;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, .07),                 /* le bord du verre */
+      0 0 0 1px rgba(8, 6, 4, .75),                              /* l'arête du cadre */
+      0 2px 3px rgba(8, 5, 2, .45),
+      6px 18px 34px -10px rgba(8, 5, 2, .7),
+      14px 46px 90px -30px rgba(8, 5, 2, .65);
+  }
+  /* les boutons sur la tranche : le volume (deux) à gauche, la mise en veille à droite */
+  .tel-tranche { display: block; position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+  .tel-tranche::before, .tel-tranche::after {
+    content: ''; position: absolute; width: 4px; border-radius: 2px;
+    background: linear-gradient(90deg, #2A2B2F, #7D8085 45%, #3A3C40);
+  }
+  .tel-tranche::before { left: calc(-3px - 3.5px); top: 21%; height: 6.5%; box-shadow: 0 calc(var(--tel-H) * .09) 0 #4C4E53; }
+  .tel-tranche::after { right: calc(-3px - 3.5px); top: 27%; height: 10%; background: linear-gradient(90deg, #3A3C40, #7D8085 55%, #2A2B2F); }
+
+  /* ---------- l'écran : le bloc conteneur de toute l'appli ---------- */
+  .ecran {
+    position: relative; width: 100%; height: 100%; border-radius: var(--tel-r);
+    overflow: hidden; overflow: clip;
+    background: var(--papier) var(--grain); /* (sur téléphone : le fond de la page) */
+    container-type: size; contain: strict; will-change: transform;
+    --safe-t: 40px;  /* la barre d'état dessinée */
+    --safe-b: 16px;  /* le trait du bas */
+  }
+  /* sous l'heure, le voile d'ombre de l'appli (body::after sur iPhone) */
+  .ecran::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 0; z-index: 45; height: calc(var(--safe-t) * 1.3); pointer-events: none;
+    background: linear-gradient(180deg, rgba(24, 16, 10, .55), rgba(24, 16, 10, .32) 68%, rgba(24, 16, 10, 0));
+  }
+  :root.ouverture .ecran::before { z-index: 85; } /* (pendant l'ouverture, au-dessus des lacets clairs : l'heure se lit) */
+  /* la barre d'état : l'heure de Paris à gauche, le réseau et la batterie à droite (au-dessus de tout, même de l'ouverture) */
+  .tel-etat {
+    display: flex; position: absolute; left: 0; right: 0; top: 0; z-index: 90; height: var(--safe-t); padding: 1px calc(var(--tel-r) * .6) 0 calc(var(--tel-r) * .74);
+    align-items: center; justify-content: space-between; pointer-events: none;
+    color: #FFFCF6; font-family: var(--sans); font-weight: 650; font-size: 15px; line-height: 1; letter-spacing: .01em; font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  }
+  .tel-heure { min-width: 3ch; }
+  .tel-etat svg { width: 68px; height: 13px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .2)); }
+  /* le trait du bas (on remonte l'appli d'un geste) : sur la sangle des onglets, sous les feuilles qui montent */
+  .tel-geste {
+    display: block; position: absolute; left: 50%; bottom: 6px; z-index: 46; width: 34%; height: 4.5px; margin-left: -17%; border-radius: 99px; pointer-events: none;
+    background: rgba(255, 246, 230, .62); box-shadow: 0 0 0 .5px rgba(30, 20, 12, .25);
+  }
+
+  /* ---------- dans l'écran : ce qui se mesurait sur la fenêtre se mesure sur l'écran ---------- */
+  .ecran #accueil { --logo-l: min(78cqw, 330px); }
+  .ecran .scene { height: clamp(calc(380px + var(--safe-t)), calc(100cqh - var(--tab-h) - var(--safe-b) - var(--logo-h) - 34px), calc(min(150cqw, 780px) + var(--safe-t))); }
+  .ecran .eh-bandeau { font-size: min(12.5px, calc((100cqw - 24px) / 30)); }
+  .ecran .ticket-corps { padding-left: clamp(14px, 4.5cqw, 20px); padding-right: clamp(14px, 4.5cqw, 20px); }
+  .ecran .tapis-zone { --cm: calc(min(340px, 100cqw - 36px) / 25); }
+  .ecran .sheet-panel { max-height: calc(100% - max(12cqh, var(--safe-t) + 16px)); }
+  .ecran .sheet-haute .sheet-panel { height: calc(100% - max(6cqh, var(--safe-t) + 10px)); max-height: none; }
+  /* l'ouverture couvre l'écran du téléphone, pas la fenêtre */
+  .ecran .splash { min-height: 0; }
+  /* ce qui était ajouté au <body> en position fixe (les mains du clouage, la réponse qui s'envole), rangé dans l'écran
+     par js/co-app.js : ses coordonnées sont celles de la fenêtre, on le décale de la place de l'écran */
+  .ecran > .dans-ecran { translate: calc(-1 * var(--ecran-x, 0px)) calc(-1 * var(--ecran-y, 0px)); max-width: none; max-height: none; }
+
+  /* ======================================================================
+     L'établi : le tapis de découpe (son coin en haut à gauche, il file sous le téléphone et hors de la fenêtre)
+     ====================================================================== */
+  .bureau { display: contents; }
+  /* (le tapis penché déborde de la fenêtre : rogné ici, la page ne s'agrandit pas ; ni fixé ni composité : il se peint une fois) */
+  .bureau-fond { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .bureau-tapis {
+    --m: calc(var(--bureau-cm) * 1.15);                                   /* la marge : les chiffres, sans quadrillage */
+    --t1: rgba(222, 226, 170, .13); --t5: rgba(222, 226, 170, .3);       /* le trait du centimètre, des cinq centimètres */
+    /* son coin : un peu à gauche de la présentation, sous le haut du téléphone (sur un très grand écran, pas trop loin du bord) */
+    --x: min(calc((100vw - var(--bureau-groupe)) / 2 - var(--bureau-cm) * 1.9), 18vw);
+    --y: max(14px, min(calc(50vh - var(--tel-H) / 2 + var(--bureau-cm) * .9), 12vh));
+    display: block; position: absolute; overflow: hidden;
+    left: var(--x); top: var(--y); width: calc(100vw - var(--x) + 60px); height: calc(100vh - var(--y) + 60px); padding: var(--m);
+    transform: rotate(-1.3deg); transform-origin: 0 0; border-radius: 8px;
+    background:
+      linear-gradient(90deg, var(--t5) 1.2px, transparent 1.2px) 0 0 / calc(var(--bureau-cm) * 5) calc(var(--bureau-cm) * 5),
+      linear-gradient(var(--t5) 1.2px, transparent 1.2px) 0 0 / calc(var(--bureau-cm) * 5) calc(var(--bureau-cm) * 5),
+      linear-gradient(90deg, var(--t1) 1px, transparent 1px) 0 0 / var(--bureau-cm) var(--bureau-cm),
+      linear-gradient(var(--t1) 1px, transparent 1px) 0 0 / var(--bureau-cm) var(--bureau-cm),
+      /* les graduations de la marge, une par centimètre, contre le quadrillage */
+      linear-gradient(90deg, var(--t5) 1px, transparent 1px) var(--m) calc(var(--m) - 7px) / var(--bureau-cm) 7px repeat-x,
+      linear-gradient(var(--t5) 1px, transparent 1px) calc(var(--m) - 7px) var(--m) / 7px var(--bureau-cm) repeat-y,
+      /* l'usure : la colle, la lumière de la lampe */
+      radial-gradient(7vw 4.5vw at 8vw 93vh, rgba(10, 30, 22, .3), transparent 70%),
+      radial-gradient(4vw 3vw at 66vw 12vh, rgba(10, 30, 22, .22), transparent 70%),
+      radial-gradient(70vw 60vh at 30vw 40vh, rgba(190, 220, 170, .1), transparent 70%),
+      linear-gradient(160deg, #336650, #2C5B47 30%, #28503F 60%);
+    background-origin: content-box, content-box, content-box, content-box, border-box, border-box, border-box, border-box, border-box, border-box;
+    background-clip: content-box, content-box, content-box, content-box, border-box, border-box, border-box, border-box, border-box, border-box;
+    box-shadow: 0 0 0 1px rgba(10, 24, 18, .55), 3px 5px 0 -1px rgba(14, 30, 23, .9), 6px 14px 24px rgba(5, 3, 1, .5), inset 0 1px 0 rgba(200, 230, 200, .14);
+  }
+  /* les chiffres de la marge (posés par js/co-app.js : un <i style="--i:n"> par centimètre) */
+  .bureau-tapis i {
+    position: absolute; font-style: normal; font-family: var(--chiffres); font-weight: 600; font-size: max(10px, calc(var(--bureau-cm) * .24)); line-height: 1;
+    color: rgba(222, 226, 170, .55); transform: translate(-50%, -50%);
+  }
+  .bureau-tapis .h { top: calc(var(--m) * .42); left: calc(var(--m) + var(--i) * var(--bureau-cm)); }
+  .bureau-tapis .v { left: calc(var(--m) * .42); top: calc(var(--m) + var(--i) * var(--bureau-cm)); }
+
+  /* ======================================================================
+     La présentation (à partir de 1000 px de large)
+     ====================================================================== */
+  .bureau-pres { display: none; }
+  @media (min-width: 1000px) {
+    :root {
+      --bureau-pres: clamp(330px, 36vw - 64px, 470px);
+      --bureau-ecart: clamp(44px, 6.5vw - 20px, 120px);
+      --bureau-groupe: calc(var(--bureau-pres) + var(--bureau-ecart) + var(--tel-W));
+    }
+    @supports (width: round(down, 1.5px, 1px)) { /* (des pixels entiers : voir plus haut) */
+      :root { --bureau-pres: round(down, clamp(330px, 36vw - 64px, 470px), 1px); --bureau-ecart: round(down, clamp(44px, 6.5vw - 20px, 120px), 1px); }
+    }
+    .bureau-pres {
+      position: relative; z-index: 1; flex: none; display: flex; flex-direction: column; align-items: flex-start;
+      width: var(--bureau-pres); max-height: var(--tel-H); gap: clamp(6px, 5vh - 22px, 24px); color: var(--creme);
+    }
+  }
+
+  /* la carte de la boutique : le logo sauge sur crème, collée d'un bout de ruban */
+  .bureau-carte {
+    position: relative; margin: 0 0 clamp(2px, .8vh, 8px) 4px; padding: clamp(18px, 3.2vh, 30px) clamp(24px, 2.6vw, 36px) clamp(16px, 2.8vh, 26px);
+    background: var(--grain), linear-gradient(172deg, #FFF8EE, var(--creme) 46%, #F7E9D5);
+    border-radius: 3px; transform: rotate(-1.8deg);
+    box-shadow: inset 0 0 0 1px rgba(160, 130, 90, .12), 0 1px 1px rgba(20, 12, 6, .4), 1px 4px 6px -2px rgba(10, 6, 3, .4), 8px 18px 28px -12px rgba(5, 3, 1, .75);
+  }
+  .bureau-carte .scotch { left: 50%; top: -9px; width: 58px; height: 17px; margin-left: -29px; transform: rotate(2.5deg); }
+  .bureau-logo { width: clamp(230px, 24vw, 330px); aspect-ratio: 1023.4 / 197.8; color: var(--sauge); }
+  .bureau-logo svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+  /* l'accroche, à la craie claire sur le tapis */
+  .bureau-titre {
+    margin: 0; font-family: var(--large); font-weight: 780; font-size: clamp(27px, min(2.85vw, 4.7vh), 42px); line-height: 1.07; letter-spacing: -.015em;
+    text-wrap: balance; color: var(--creme); text-shadow: 0 1px 1px rgba(8, 20, 14, .45), 0 4px 14px rgba(8, 20, 14, .35);
+  }
+  .bureau-texte {
+    margin: 0; max-width: 36ch; font-size: clamp(14.5px, min(1.2vw, 2.15vh), 17.5px); line-height: 1.5; color: rgba(255, 242, 226, .86);
+    text-wrap: pretty; text-shadow: 0 1px 1px rgba(8, 20, 14, .4);
+  }
+
+  /* l'adresse et les horaires : des étiquettes Dymo (le style de Mes tickets, css/co-tickets.css) */
+  .bureau-dymos { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 2px 0 0 2px; }
+  .bureau-dymos .dymo { height: 25px; font-size: clamp(13px, 1.9vh, 15.5px); }
+  .bureau-dymos .dymo:nth-child(1) { transform: rotate(-1.4deg); }
+  .bureau-dymos .dymo:nth-child(2) { transform: rotate(1deg); margin: -2px 0 0 34px; }
+  .bureau-dymos .dymo:nth-child(3) { transform: rotate(-.8deg); margin: 6px 0 0 10px; }
+
+  /* le QR code : imprimé sur un ticket de réparation jaune, et le mot de Clément à côté */
+  .bureau-scan { display: flex; align-items: center; gap: clamp(14px, 1.6vw, 22px); margin-top: clamp(0px, 1vh, 10px); }
+  .bureau-ticket {
+    position: relative; flex: none; width: clamp(124px, 32vh - 56px, 188px); padding: 30px 13px 15px; color: #2A2310;
+    transform: rotate(-1.2deg); filter: drop-shadow(0 1px 1px rgba(20, 12, 4, .35)) drop-shadow(6px 12px 12px rgba(5, 3, 1, .5)); /* (à peine penché : le QR se lit mieux) */
+  }
+  .bureau-ticket::before { /* le carton, ses coins coupés */
+    content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 6px 6px 10px 10px;
+    background: var(--grain), linear-gradient(180deg, #F7DB5A, var(--ticket) 30%, #EFCB3E);
+    clip-path: polygon(0 22px, 22px 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%);
+    box-shadow: inset 0 -3px 0 rgba(160, 120, 10, .2);
+  }
+  .bt-oeillet { /* l'œillet cerclé de métal : par le trou, on voit le tapis */
+    position: absolute; left: 50%; top: 9px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%;
+    background: radial-gradient(circle, #1F3E33 0 32%, #CFC8B8 38%, #8E887C 56%, #E6E0D2 72%, #A49D8F 88%);
+    box-shadow: 0 1px 1.5px rgba(0, 0, 0, .3);
+  }
+  .bt-tete { display: flex; align-items: baseline; justify-content: space-between; margin: 0 2px 8px; }
+  .bt-marque { font-family: var(--chiffres); font-weight: 800; font-size: 12.5px; letter-spacing: .14em; }
+  .bt-num { font-family: var(--chiffres); font-weight: 800; font-size: 23px; line-height: 1; letter-spacing: .02em; color: var(--pastille); }
+  .bt-num small { font-size: 11px; letter-spacing: .1em; color: #5A4A1A; margin-right: 2px; }
+  .bureau-qr { aspect-ratio: 1; padding: 5px; border-radius: 3px; background: #FFFCF6; box-shadow: inset 0 0 0 1px rgba(90, 70, 10, .22); }
+  .bureau-qr svg { display: block; width: 100%; height: 100%; }
+  .bt-pastille { position: absolute; right: 11px; bottom: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--pastille); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .2); }
+  .bureau-mot {
+    margin: 0; max-width: 11.5em; font-family: var(--stylo); font-weight: 400; font-size: clamp(19px, 2.9vh, 24px); line-height: 1.12;
+    color: var(--creme); transform: rotate(-2deg); text-shadow: 0 1px 1px rgba(8, 20, 14, .45);
+  }
+  /* la carte et le ticket se posent quand leur logo et leur QR sont là (js/co-app.js : .bureau.pret) : pas de carton vide au chargement */
+  .bureau-carte, .bureau-ticket { transition: opacity .5s ease; }
+  .bureau:not(.pret) .bureau-carte, .bureau:not(.pret) .bureau-ticket { opacity: 0; }
+}

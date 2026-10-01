@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="../css/fonts.css">
 <style>
   /* Banc d'essai de la devanture : ?soir (ou ?nuit) ?ferme ?fige ?zone ?entre ?ardoise ?w=900&h=500 ?yaw=0.6
+     ?essai=finisseuse:1,reflet:329… (avec ?fige : un état précis, pour comparer des captures)
      Les polices passent par les variables de l'appli (la devanture n'en nomme aucune) : on les définit ici. */
   :root {
     --large: 'Bricolage Grotesque', system-ui, sans-serif;
@@ -90,6 +91,10 @@
     if (q.has('fige')) f.idle(true);
     else { await f.play(); f.idle(); }
     if (q.has('entre')) { dedans = true; f.entrer(q.has('fige') ? { ms: 0 } : {}); }
+    // ?essai=nom:valeur,… : des états figés (avec ?fige), pour comparer des captures (pose, finisseuse, hocher,
+    // reflet, porte, defile, pied, clement : voir essai() dans js/co-facade.js)
+    if (q.has('essai')) q.get('essai').split(',').forEach((s) => { const [k, v] = s.split(':'); if (f.essai) f.essai(k, v); });
+    window.PRET = true;
 
     document.getElementById('b-play').onclick = () => f.play();
     document.getElementById('b-nuit').onclick = () => { nuit = !nuit; f.setNuit(nuit); };

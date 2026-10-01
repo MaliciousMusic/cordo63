@@ -5,6 +5,9 @@
    la grille défile : on touche une réparation, la case est percée à l'emporte-pièce, ses
    outils se posent sur le tapis et le devis se met à jour ; « Déposer ces réparations »
    prépare le ticket.
+   Ce qui coûte (les dessins des plans, le décor recadré, les objets de l'établi) se fait aux
+   temps morts, dès que l'appli est prête sous l'ouverture : rien de lourd au chargement, ni en
+   ouvrant l'onglet.
    ========================================================================== */
 (function () {
   'use strict';
@@ -19,6 +22,8 @@
   let etiquetteT = 0;
 
   const rubriqueDe = (id) => CO.SERVICES.find((r) => r.items.some((it) => it.id === id));
+  /* un temps mort (co-rendu.js : requestIdleCallback, ou son équivalent sur Safari) */
+  const inactif = (fn, delai) => (CO.R && CO.R.inactif ? CO.R.inactif(fn, delai) : setTimeout(() => fn({ didTimeout: true, timeRemaining: () => 8 }), 60));
 
   function total() {
     const servs = [...choisis].map((id) => CO.service(id)).filter(Boolean);
@@ -30,7 +35,9 @@
     const t = $('#eh-total');
     if (t) t.textContent = choisis.size ? CO.Commandes.texteEstimation(e) : '0 €';
     const b = $('#eh-devis');
-    if (b && saute && !CO.reduced) { b.classList.remove('saute'); void b.offsetWidth; b.classList.add('saute'); }
+    // (l'animation repart deux images plus tard, une fois la classe ôtée vue par le navigateur : pas de mise en page
+    // forcée dans le toucher)
+    if (b && saute && !CO.reduced) { b.classList.remove('saute'); requestAnimationFrame(() => requestAnimationFrame(() => b.classList.add('saute'))); }
     const barre = $('#devis-barre');
     if (barre) {
       barre.hidden = !choisis.size;
@@ -58,6 +65,12 @@
       return e;
     }).catch((err) => { console.warn('établi', err); return null; });
     return etabliPromesse;
+  }
+  /* l'onglet s'ouvre : l'établi se crée juste après sa première image (pas dans la bascule d'onglet, où le
+     navigateur calcule déjà toute la vue qui apparaît) */
+  function etabliApresImage() {
+    if (etabliPromesse) return;
+    requestAnimationFrame(() => setTimeout(() => { if (CO.view === 'services') preparerEtabli(); }, 0));
   }
 
   function poserOutils(id, anime = true) {
@@ -122,6 +135,65 @@
     } else retirerOutils(id);
   }
 
+  /* ---------- les plans des vignettes : la place à l'init (un bouton bleu, vide), le dessin aux temps morts ----------
+     (un plan, c'est une scène dessinée, ses animations compilées en CSS, deux <svg> à insérer : trente-trois d'un coup,
+     c'était une demi-seconde au chargement d'un téléphone) */
+  let plans = null, aDessiner = null, ioPlans = null, imagePlans = 0;
+  const visibles = new Set();
+  let coutPlan = 6; // ms : ce que coûte un dessin de vignette (le plus long des derniers), pour tenir les temps morts
+  function dessinerPlan(b) {
+    if (b.dataset.plan) return false;
+    const t0 = performance.now();
+    b.dataset.plan = '1';
+    if (ioPlans) ioPlans.unobserve(b);
+    b.innerHTML = CO.Plans.svg(b.parentElement.dataset.id, { taille: 'mini', decoratif: true });
+    coutPlan = Math.max(coutPlan * 0.8, performance.now() - t0);
+    return true;
+  }
+  function dessinerPlans() {
+    if (!CO.Plans || aDessiner) return;
+    const boutons = $$('#liste-services .plan-mini');
+    aDessiner = boutons.filter((b) => !b.dataset.plan);
+    const ids = boutons.map((b) => b.parentElement.dataset.id);
+    let regles = !CO.Plans.preparer;
+    const pas = (dl) => {
+      // d'abord les animations de toutes les vignettes, posées d'un coup (une seule feuille de style) ; puis les dessins,
+      // un par un, tant qu'il reste du temps pour le suivant (attendu trop longtemps : un seul, quand même)
+      const t0 = performance.now(), force = !dl || dl.didTimeout;
+      const reste = () => (force ? 7 - (performance.now() - t0) : Math.min(16, dl.timeRemaining()));
+      if (!regles) regles = CO.Plans.preparer(ids, { temps: Math.max(2, reste() - 2) });
+      let n = 0;
+      while (regles && aDessiner.length && (n === 0 ? force || reste() > Math.min(coutPlan, 10) : reste() > coutPlan + 2)) { if (dessinerPlan(aDessiner.shift())) n++; }
+      if (n && plans) plans.rafraichir();
+      if (aDessiner.length || !regles) inactif(pas, 2500);
+    };
+    inactif(pas, 2500);
+  }
+  /* on arrive sur l'onglet avant qu'ils soient tous faits : ceux qu'on voit (ou presque) d'abord, un par image
+     (un IntersectionObserver les signale : rien n'est mesuré) ; le reste, aux temps morts */
+  function surveillerPlans() {
+    if (!CO.Plans || !('IntersectionObserver' in window)) return;
+    ioPlans = new IntersectionObserver((es) => {
+      for (const e of es) if (e.isIntersecting && !e.target.dataset.plan) visibles.add(e.target);
+      if (visibles.size) dessinerVisibles();
+    }, { root: $('#services .view-scroll'), rootMargin: '240px 0px' });
+    $$('#liste-services .plan-mini').forEach((b) => ioPlans.observe(b));
+  }
+  function dessinerVisibles() {
+    if (imagePlans) return;
+    imagePlans = requestAnimationFrame(() => {
+      imagePlans = 0;
+      let n = 0;
+      for (const b of visibles) {
+        visibles.delete(b);
+        if (dessinerPlan(b)) n++;
+        if (n >= 1) break;
+      }
+      if (n && plans) plans.rafraichir();
+      if (visibles.size) dessinerVisibles();
+    });
+  }
+
   /* ---------- les rubriques (puces collantes) ---------- */
   function rubriques() {
     const nav = $('#rubriques');
@@ -166,6 +238,7 @@
         choisir(id);
       });
     }, { passive: true });
+    // (la liste change de taille quand un plan arrive ? non : sa place est réservée ; mais les polices, la largeur…)
     if (window.ResizeObserver) new ResizeObserver(() => { tops = []; }).observe($('#liste-services') || sc);
     CO.on('view', (v) => { if (v === 'services') tops = []; });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { tops = []; });
@@ -192,12 +265,12 @@
         li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); basculer(li); } });
       });
       // chaque réparation a son plan animé (js/co-plans.js) : la vignette à gauche de la ligne ; touchée, le grand plan
+      // (ici, la place seulement : le dessin vient aux temps morts, voir dessinerPlans)
       if (CO.Plans) {
-        let plans = null;
         $$('#liste-services .ligne').forEach((li) => {
           const id = li.dataset.id, it = CO.service(id);
           li.classList.add('a-plan');
-          li.insertAdjacentHTML('afterbegin', `<button class="plan-mini" type="button" aria-label="${CO.esc('Voir le plan : ' + (it ? it.nom : id))}">${CO.Plans.svg(id, { taille: 'mini', decoratif: true })}</button>`);
+          li.insertAdjacentHTML('afterbegin', `<button class="plan-mini" type="button" aria-label="${CO.esc('Voir le plan : ' + (it ? it.nom : id))}"></button>`);
           const b = li.firstElementChild;
           b.addEventListener('click', (e) => {
             e.stopPropagation(); // la ligne ne se perce pas
@@ -209,7 +282,9 @@
           });
           b.addEventListener('keydown', (e) => e.stopPropagation()); // Entrée, Espace : le bouton, pas la ligne
         });
-        plans = CO.Plans.observer($('#liste-services'));
+        // (pendant qu'on fait défiler la liste, les vignettes ne s'animent pas)
+        plans = CO.Plans.observer($('#liste-services'), { defilement: $('#services .view-scroll') });
+        surveillerPlans();
       }
       rubriques();
       majDevis(false);
@@ -224,16 +299,26 @@
         const b = $('#devis-barre');
         if (b) b.scrollIntoView({ block: 'end', behavior: CO.reduced ? 'auto' : 'smooth' });
       });
-      // l'établi se prépare quand on arrive sur l'onglet (ou en temps mort)
-      CO.on('view', (v) => { if (v === 'services') preparerEtabli(); });
-      // le décor de l'établi se calcule aux temps morts, à la taille qu'il aura (gardé en mémoire et dans
-      // IndexedDB) : le premier passage sur l'onglet est immédiat ; la scène elle-même attend d'être visible
-      CO.on('ouverture', () => setTimeout(() => { // une fois l'ouverture finie (pas pendant les lacets)
-        if (!CO.Etabli || !CO.Etabli.prechauffer) return;
-        const main = document.getElementById('main');
-        const w = main ? main.clientWidth : innerWidth, h = main ? main.clientHeight : innerHeight;
-        try { CO.Etabli.prechauffer({ largeur: w, hauteur: Math.round(CO.clamp(h * 0.46, 250, 520)), disposition: 'services', graine: 63, fondFige: FOND }); } catch (e) { /* rien */ }
-      }, 1200));
+      // l'établi se prépare quand on arrive sur l'onglet (juste après sa première image) ; les plans qu'on voit, eux,
+      // arrivent par ioPlans ; ceux qui restent continuent aux temps morts
+      CO.on('view', (v) => { if (v === 'services') { etabliApresImage(); dessinerPlans(); } });
+      // aux temps morts, dès que l'appli est prête sous l'ouverture (« coulisses », ou « ouverture » si elle vient
+      // d'abord) : les plans, le décor de l'établi recadré à la taille qu'il aura, ses objets (gardés en mémoire et
+      // dans le téléphone) — le premier passage sur l'onglet est immédiat ; la scène elle-même attend d'être visible
+      let prete = false;
+      const coulisses = () => {
+        if (prete) return;
+        prete = true;
+        dessinerPlans();
+        inactif(() => {
+          if (!CO.Etabli || !CO.Etabli.prechauffer) return;
+          const main = document.getElementById('main');
+          const w = main ? main.clientWidth : innerWidth, h = main ? main.clientHeight : innerHeight;
+          try { CO.Etabli.prechauffer({ largeur: w, hauteur: CO.clamp(h * 0.46, 250, 520), disposition: 'services', graine: 63, fondFige: FOND }); } catch (e) { /* rien */ }
+        }, 3000);
+      };
+      CO.on('coulisses', coulisses);
+      CO.on('ouverture', coulisses);
       // le ticket en cours de remplissage coche/décoche aussi ici
       CO.on('devis', (ids) => {
         choisis = new Set(ids);

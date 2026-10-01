@@ -16,11 +16,15 @@
        fixe : l'état final, sans animation (par défaut : CO.reduced ; prefers-reduced-motion aussi en CSS)
        un id inconnu → le plan générique de sa rubrique (CO.service(id).rubrique, ou { rubrique },
          ou 'rubrique:talons' … ; sinon « À l'atelier »)
-   CO.Plans.observer(racine, { seuil, marge })   n'anime que les plans visibles (classe .joue, les
+   CO.Plans.observer(racine, { seuil, marge, defilement })   n'anime que les plans visibles (classe .joue, les
                                autres en animation-play-state: paused) et suit l'onglet (CO.view) ;
+                               defilement : l'élément qui défile (pendant qu'on le fait défiler, rien ne s'anime) ;
                                renvoie { rafraichir(), pause(oui), deconnecter() }
+   CO.Plans.preparer(ids, { taille })   compile d'un coup les animations de ces plans (une seule feuille de style :
+                               un seul recalcul du style de la page, à faire aux temps morts, avant de les dessiner)
    CO.Plans.feuille(id, { action: { texte, fn }, onClose })   le grand plan dans une feuille
-                               (#feuille-plan : celle d'index.html si elle existe, sinon créée)
+                               (#feuille-plan : celle d'index.html si elle existe, sinon créée) ; le plan y vit dans
+                               un shadow root avec ses règles (ouvrir la feuille ne recalcule pas le style de la page)
    CO.Plans.fermer()           referme la feuille
    CO.Plans.infos(id)          { id, titre, alt, legende, vue, rubrique, duree, generique }
    CO.Plans.ids                les plans dessinés (un par service)
@@ -210,6 +214,7 @@ background-size:150px 150px,300px 300px,100% 100%,40px 40px,40px 40px,8px 8px,8p
 span.plan{position:relative}
 .plan>svg{position:absolute;left:0;top:0;width:100%;height:100%;display:block;overflow:hidden}
 .plan-mini{width:64px;height:48px;background-size:150px 150px,300px 300px,100% 100%,16px 16px,16px 16px,4px 4px,4px 4px,100% 100%}
+.plan.plan-mini{content-visibility:auto;contain-intrinsic-size:64px 48px}
 .plan-grand{width:100%;height:auto;aspect-ratio:320/220}
 .plan path,.plan circle,.plan ellipse,.plan rect,.plan polyline,.plan polygon{fill:none;stroke:var(--pl-1);stroke-linecap:round;stroke-linejoin:round;stroke-width:calc(var(--u)*1.2px)}
 .plan .t{stroke-width:calc(var(--u)*1.3px)}
@@ -246,6 +251,8 @@ span.plan{position:relative}
 .plan.fixe .a{animation:none!important}
 @media (prefers-reduced-motion:reduce){.plan .a{animation:none!important}}
 `;
+  // le grand plan de la feuille, dans son shadow root (la règle de css/co-plans.css n'y entre pas)
+  const CSS_GRAND = '.plan-grand{border-radius:10px;box-shadow:0 14px 28px -18px rgba(12,28,56,.95),0 0 0 1px rgba(12,28,56,.12)}';
   let feuilleCss = null;
   const injectes = new Set();
   function css() {
@@ -257,12 +264,12 @@ span.plan{position:relative}
     feuilleCss = el.sheet;
     return feuilleCss;
   }
-  function injecter(sc) {
-    if (injectes.has(sc.id) || typeof document === 'undefined') return;
-    injectes.add(sc.id);
+  function injecter(cle, liste) {
+    if (injectes.has(cle) || typeof document === 'undefined') return;
+    injectes.add(cle);
     const sh = css();
-    compiler(sc).forEach((r) => {
-      try { sh.insertRule(r, sh.cssRules.length); } catch (e) { console.warn('plans : règle refusée', sc.id, r.slice(0, 90), e); }
+    liste.forEach((r) => {
+      try { sh.insertRule(r, sh.cssRules.length); } catch (e) { console.warn('plans : règle refusée', cle, r.slice(0, 90), e); }
     });
   }
 
@@ -2251,7 +2258,7 @@ span.plan{position:relative}
     // les coutures : leur nombre de points (par taille) fixe leurs marches
     const nPts = [...corps.matchAll(/pathLength="(\d+)" class="[^"]*\ba k-(points|dents)"/g)].map((m) => [m[2], +m[1]]);
     const cle = sc.cle + (mini ? '-m' : '');
-    preparer(sc, cle, nPts, mini, new Set([...corps.matchAll(/\ba k-([\w-]+)/g)].map((m) => m[1])));
+    preparer(sc, cle, nPts, mini, new Set([...corps.matchAll(/\ba k-([\w-]+)/g)].map((m) => m[1])), opts.regles);
     let cadreS = '';
     if (mini) {
       const cw = sc.crop[2];
@@ -2272,9 +2279,8 @@ span.plan{position:relative}
       calque('pl-trait' + (mini ? ' a i-fm' : ''), defs + cadreS + avant + c.fixe + apres) + (c.jeu ? calque('pl-mouv', avant + c.jeu + apres) : '') + '</span>';
   }
 
-  /* compile (une fois par clé) les animations d'un plan ; les « points » prennent le nombre réel de points */
-  function preparer(sc, cle, nPts, mini, noms) {
-    if (injectes.has(cle) || typeof document === 'undefined') return;
+  /* les règles d'un plan (sans les poser) ; les « points » prennent le nombre réel de points */
+  function regles(sc, cle, nPts, mini, noms) {
     const k = Object.assign({}, keyframesDe(sc));
     nPts.forEach(([nom, n]) => {
       const t = sc.pts || null;
@@ -2282,7 +2288,47 @@ span.plan{position:relative}
       else if (!k[nom] && t) k[nom] = KF.points(n, t[0], t[1], sc.D);
     });
     if (mini && sc.pts && !k.points) k.points = KF.points(1, sc.pts[0], sc.pts[1], sc.D); // (fondu en vignette)
-    injecter({ id: cle, cle, D: sc.D, fin: sc.fin, k, mini, noms });
+    return compiler({ id: cle, cle, D: sc.D, fin: sc.fin, k, mini, noms });
+  }
+  /* compile (une fois par clé) les animations d'un plan, dans la feuille de la page ; dans : un tableau où les
+     ranger à la place (le plan vit dans un shadow root : ses règles avec lui, la page n'en sait rien) */
+  function preparer(sc, cle, nPts, mini, noms, dans) {
+    if (dans) { dans.push(...regles(sc, cle, nPts, mini, noms)); return; }
+    if (enLot.has(cle)) poserLot(); // (déjà compilé, pas encore posé : on pose le lot maintenant)
+    if (injectes.has(cle) || typeof document === 'undefined') return;
+    injecter(cle, regles(sc, cle, nPts, mini, noms));
+  }
+  /**
+   * CO.Plans.preparer(ids, { taille, temps }) : les animations de ces vignettes, compilées (sans les dessiner : en
+   * vignette, rien ne dépend du dessin ; les images clés inutilisées ne coûtent rien) puis posées d'un coup, dans
+   * une feuille à elles. temps (ms) : on s'arrête là, la suite au prochain appel → true quand tout est posé.
+   */
+  const enLot = new Set();
+  let lot = '';
+  function poserLot() {
+    if (!lot) return;
+    const el = document.createElement('style');
+    el.className = 'co-plans-lot';
+    el.textContent = lot;
+    document.head.appendChild(el);
+    enLot.forEach((c) => injectes.add(c));
+    enLot.clear();
+    lot = '';
+  }
+  function preparerTout(ids, o = {}) {
+    if (typeof document === 'undefined' || o.taille === 'grand') return true;
+    css();
+    const fin = o.temps != null ? performance.now() + o.temps : Infinity;
+    for (const id of ids || []) {
+      const sc = trouver(id, o.rubrique);
+      const cle = sc.cle + '-m';
+      if (injectes.has(cle) || enLot.has(cle)) continue;
+      if (performance.now() > fin) return false;
+      enLot.add(cle);
+      lot += regles(sc, cle, [], true, null).join('\n') + '\n';
+    }
+    poserLot();
+    return true;
   }
 
   /* ---------- n'animer que ce qui se voit ----------
@@ -2290,11 +2336,22 @@ span.plan{position:relative}
      (animation-play-state) et ne coûtent rien. Suit aussi l'onglet de l'appli (CO.view). */
   function observer(racine = document, o = {}) {
     const root = racine || document;
-    let enPause = false;
+    let enPause = false, defile = false;
     const vus = new Set(), suivis = new Set();
     const vue = root.closest ? root.closest('.view') : null;
     const vueActive = () => !vue || !CO.view || CO.view === vue.dataset.view;
-    const maj = (el) => el.classList.toggle('joue', !enPause && vueActive() && (!io || vus.has(el)));
+    const maj = (el) => el.classList.toggle('joue', !enPause && !defile && vueActive() && (!io || vus.has(el)));
+    // pendant qu'on fait défiler la liste, rien ne s'anime (chaque image du défilement reste légère) ; ça reprend
+    // là où c'était, un instant après le dernier mouvement
+    if (o.defilement) {
+      let t = 0;
+      const fin = () => { t = 0; defile = false; vus.forEach(maj); };
+      o.defilement.addEventListener('scroll', () => {
+        if (!defile) { defile = true; vus.forEach(maj); }
+        clearTimeout(t);
+        t = setTimeout(fin, 220);
+      }, { passive: true });
+    }
     const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => {
       es.forEach((e) => { if (e.isIntersecting) vus.add(e.target); else vus.delete(e.target); maj(e.target); });
     }, { root: o.root || null, rootMargin: o.marge || '0px', threshold: o.seuil != null ? o.seuil : 0.35 }) : null;
@@ -2318,6 +2375,25 @@ span.plan{position:relative}
   }
 
   /* ---------- le grand plan dans une feuille ---------- */
+  /* le navigateur anime-t-il un élément d'un shadow root avec les @keyframes de ce shadow root ? (essayé une fois, sur
+     un témoin minuscule ; sinon le plan reste dans la page, ses règles dans la feuille de la page, comme avant) */
+  let animeOmbre = null;
+  function ombreAnimee() {
+    if (animeOmbre != null) return animeOmbre;
+    animeOmbre = false;
+    try {
+      if (typeof Element === 'undefined' || typeof Element.prototype.attachShadow !== 'function') return false;
+      const t = document.createElement('div');
+      t.style.cssText = 'position:fixed;left:-9px;top:0;width:1px;height:1px;overflow:hidden;pointer-events:none';
+      document.body.appendChild(t);
+      const sr = t.attachShadow({ mode: 'open' });
+      sr.innerHTML = '<style>@keyframes pl-temoin{to{opacity:.5}}i{display:block;animation:pl-temoin 1s infinite}</style><i></i>';
+      const i = sr.querySelector('i');
+      animeOmbre = !!(i.getAnimations && i.getAnimations().length);
+      t.remove();
+    } catch (e) { animeOmbre = false; }
+    return animeOmbre;
+  }
   let surFermeture = null;
   function fermerFeuille() {
     const s = document.getElementById('feuille-plan');
@@ -2356,11 +2432,17 @@ span.plan{position:relative}
     s.querySelector('#fp-titre').textContent = inf.titre;
     const prix = it && CO.prixService ? CO.prixService(it) : '';
     const delai = it && CO.delaiTexte ? CO.delaiTexte(it.delai) : '';
+    // le grand plan dans un shadow root, avec ses règles : en ajouter à la feuille de la page (des @keyframes)
+    // ferait recalculer le style de toute la page, en plein geste (c'était une tâche longue à chaque plan ouvert)
+    const isole = ombreAnimee();
+    const lot = isole ? [] : null;
+    const plan = svg(id, { taille: 'grand', joue: true, rubrique: o.rubrique, regles: lot });
     corps.innerHTML =
-      `<div class="fp-plan">${svg(id, { taille: 'grand', joue: true, rubrique: o.rubrique })}</div>` +
+      `<div class="fp-plan">${isole ? '' : plan}</div>` +
       (inf.legende.length ? `<ol class="fp-legende">${inf.legende.map((l) => `<li>${esc(l)}</li>`).join('')}</ol>` : '') +
       (it ? `<p class="fp-desc">${esc(it.desc)}</p><p class="fp-meta"><b>${esc(prix)}</b>${delai ? ' · ' + esc(delai) : ''}</p>` : '') +
       (o.action ? `<button class="btn btn-sauge btn-large fp-action" type="button">${esc(o.action.texte)}</button>` : '');
+    if (isole) corps.querySelector('.fp-plan').attachShadow({ mode: 'open' }).innerHTML = `<style>:host{display:block}${CSS_BASE}${CSS_GRAND}${lot.join('\n')}</style>${plan}`;
     const b = corps.querySelector('.fp-action');
     if (b && o.action) b.addEventListener('click', () => { o.action.fn(id); fermerFeuille(); });
     if (appli) CO.openSheet('#feuille-plan', () => { const f = surFermeture; surFermeture = null; if (f) f(); });
@@ -2374,6 +2456,7 @@ span.plan{position:relative}
   CO.Plans = {
     svg,
     observer,
+    preparer: preparerTout,
     feuille,
     fermer: fermerFeuille,
     infos,

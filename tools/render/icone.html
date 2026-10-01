@@ -2,24 +2,217 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Icône Cordo 63</title>
+<link rel="stylesheet" href="../../css/fonts.css">
 <style>
   html, body { margin: 0; background: transparent; }
-  /* l'icône d'appli : CORDO63 à l'encre noire sur le crème, lacé par un lacet rouge qui passe dessus, dessous
-     (CO.Lacets.logoSVG, forme « carre » : CORDO puis 63 sur deux lignes, le lacet en Z comme les deux rangs
-     d'œillets d'une chaussure). ?k=0.8 : la version masquable, tout tient dans la zone sûre (80 %). */
-  #ic { width: 512px; height: 512px; background: #FFF2E2; overflow: hidden; }
-  #ic svg { display: block; width: 512px; height: 512px; }
+  /* l'icône d'appli : CORDO puis 63 en cubes de bois lettrés (les perles de l'ouverture, CO.splash.perles),
+     enfilés sur le lacet rouge : il entre par la gauche, fait demi-tour à droite, repasse dans 63 et finit
+     en ferret. Les lettres aussi grandes que la largeur le permet, dessinées en petit corps (la taille
+     optique de la police : plus larges, plus ouvertes) ; en petit, moins de détails et des traits d'un pixel.
+       ?taille=180  le côté rendu, en px (on dessine toujours sur 512, puis on réduit)
+       ?k=0.8       la version masquable : tout tient dans la zone sûre
+       ?forme=signe le favicon : « 63 » seul, sans fond */
+  #ic { width: 512px; height: 512px; overflow: hidden; }
+  #ic canvas { display: block; width: 100%; height: 100%; }
 </style>
 </head>
 <body>
-<div id="ic"></div>
+<div id="ic"><canvas></canvas></div>
 <script src="../../js/co-core.js"></script>
-<script src="../../js/co-brand.js"></script>
 <script src="../../js/co-lacets.js"></script>
+<script src="../../js/co-splash.js"></script>
 <script>
-  const k = +new URLSearchParams(location.search).get('k') || 1;
-  document.getElementById('ic').innerHTML = CO.Lacets.logoSVG({ forme: 'carre', fond: '#FFF2E2', k, id: 'ic' });
+(async () => {
+  const q = new URLSearchParams(location.search);
+  const cote = +q.get('taille') || 512;
+  const masque = q.has('masque'); // l'icône masquable : les cubes recentrés, agrandis jusqu'au bord de la zone sûre
+  const signe = q.get('forme') === 'signe';
+  const px = Math.round(cote * (window.devicePixelRatio || 1));
+  const ss = px <= 64 ? 4 : 2; // on dessine plus grand, puis on réduit : un vrai lissage
+  const ui = (px * ss) / 512; // unités de dessin (512 de côté) → pixels du grand canvas
+  const petit = px < 256;
+  const ic = document.getElementById('ic'), cv = ic.querySelector('canvas');
+  ic.style.width = ic.style.height = cote + 'px';
+  const police = "'Bricolage Grotesque'";
+  await Promise.race([document.fonts.load(`800 12px ${police}`, 'CORDO63'), new Promise((r) => setTimeout(r, 2000))]).catch(() => {});
+
+  const Pe = CO.splash.perles, rng = CO.rng(63);
+  const [JAUNE, BLEU, VERT, ROUGE, ROSE, ORANGE, BOIS] = [0, 1, 2, 3, 4, 5, 6];
+  // les rangs : chaque cube sa couleur (les sept de la boîte, une fois chacune), et le côté qu'il montre
+  // (+1 : la face gauche, -1 : la droite ; aux bouts, celle où le lacet entre)
+  const RANGS = signe
+    ? [{ texte: '63', couleurs: [ORANGE, BLEU], vers: [1, -1] }]
+    : [{ texte: 'CORDO', couleurs: [JAUNE, BLEU, ROUGE, VERT, ROSE], vers: [1, -1, 1, -1, -1] },
+       { texte: '63', couleurs: [ORANGE, BOIS], vers: [1, -1] }];
+  // pour la lecture : des cubes presque de face (on voit surtout la lettre, un peu le dessus, à peine le côté)
+  // et peu de lacet entre deux cubes
+  const JEU = signe ? 0.1 : 0.075;
+  const rangs = RANGS.map((r) => ({
+    cubes: [...r.texte].map((ch, i) => ({
+      lettre: ch, couleur: Pe.CUBES[r.couleurs[i]], bois: !Pe.CUBES[r.couleurs[i]],
+      lacet: r.vers[i] * (0.05 + rng() * 0.035), bascule: 0.26 + rng() * 0.04, roulis: (rng() - 0.5) * 0.045,
+      dessus: 'ABEFHKLMNPSTUVZ'[Math.floor(rng() * 15)], tour: Math.floor(rng() * 4),
+    })),
+  }));
+  // la largeur d'un rang pour un côté s (la géométrie est proportionnelle : on mesure à 1)
+  const poser = (r, s) => {
+    let bord = 0;
+    r.cubes.forEach((c, i) => {
+      c.s = s; c.geo = Pe.geomCube(s, c.lacet, c.bascule, c.roulis);
+      if (i) bord += JEU * s;
+      c.x = bord - c.geo.x0; bord = c.x + c.geo.x1;
+    });
+    r.largeur = bord;
+    return r;
+  };
+  // le côté : CORDO prend toute la largeur, moins une marge à gauche (le lacet y arrive du bord) et, à
+  // droite, la place du demi-tour (0,3 côté) et d'un peu d'air
+  const [margeG, demiTour, air] = signe ? [14, 0, 14] : [22, 0.3, 14];
+  const s = Math.floor(((512 - margeG - air) / (poser(rangs[0], 1).largeur + demiTour)) * 10) / 10;
+  rangs.forEach((r) => poser(r, s));
+  const ecart = 1.48 * s; // d'un rang au suivant
+  const milieu = margeG + rangs[0].largeur / 2; // 63 centré sous CORDO
+  rangs.forEach((r, j) => {
+    const dx = (signe ? 256 : milieu) - r.largeur / 2;
+    r.cubes.forEach((c) => { c.x += dx; c.y = j * ecart; });
+  });
+  // le bloc des cubes, un peu au-dessus du milieu (le lacet pend dessous)
+  let h0 = Infinity, h1 = -Infinity, l0 = Infinity, l1 = -Infinity;
+  rangs.forEach((r) => r.cubes.forEach((c) => { h0 = Math.min(h0, c.y + c.geo.y0); h1 = Math.max(h1, c.y + c.geo.y1); }));
+  const dy = (signe ? 262 : 236) - (h0 + h1) / 2;
+  rangs.forEach((r) => r.cubes.forEach((c) => { c.y += dy; }));
+  // l'échelle et le décalage du dessin : 1 pour l'icône ; masquable, les cubes au milieu, agrandis jusqu'à la
+  // zone sûre (le cercle de 80 %), leurs coins dedans ; le lacet, lui, peut déborder
+  let k = 1, cx = 256, cy = 256;
+  if (masque) {
+    const coins = [];
+    rangs.forEach((r) => r.cubes.forEach((c) => { coins.push([c.x + c.geo.x0, c.y + c.geo.y0], [c.x + c.geo.x1, c.y + c.geo.y1], [c.x + c.geo.x0, c.y + c.geo.y1], [c.x + c.geo.x1, c.y + c.geo.y0]); }));
+    coins.forEach(([x, y]) => { l0 = Math.min(l0, x); l1 = Math.max(l1, x); });
+    cx = (l0 + l1) / 2 + 0.06 * s; cy = (h0 + h1) / 2 + dy + 0.12 * s; // un peu à droite (le demi-tour), un peu bas (l'ombre)
+    const rmax = Math.max(...coins.map(([x, y]) => Math.hypot(x - cx, y - cy)));
+    k = Math.min(1, (0.4 * 512 - 5) / rmax);
+  }
+  const uk = ui * k, ox = ui * (256 - k * cx), oy = ui * (256 - k * cy);
+
+  /* le lacet : ses morceaux visibles, d'un trou à l'autre (dans les cubes, on ne le voit pas) */
+  const P = CO.Lacets.palette('#E03A2E');
+  const lc = { P, wl: s * (signe ? 0.2 : 0.19), mat: CO.Lacets.METAUX[P.ferret] || CO.Lacets.METAUX.nickel };
+  lc.ferret = s * 0.62;
+  // un lacet plat : ses bords plus sombres, de fines côtes en travers (la tresse), un lustre au milieu
+  // (le cordon de l'ouverture, en grand, fait trop « sucre d'orge » ; ici tout se fond en rouge en petit)
+  const lacet = (g, p) => {
+    const w = lc.wl;
+    g.lineJoin = 'round'; g.lineCap = 'butt';
+    g.strokeStyle = P.bord; g.lineWidth = w; g.stroke(p);
+    g.strokeStyle = P.base; g.lineWidth = w * 0.8; g.stroke(p);
+    g.setLineDash([w * 0.1, w * 0.12]);
+    g.strokeStyle = 'rgba(70,10,4,.2)'; g.lineWidth = w * 0.72; g.stroke(p);
+    g.setLineDash([]);
+    g.strokeStyle = 'rgba(255,232,220,.26)'; g.lineWidth = w * 0.16; g.stroke(p);
+  };
+  const trou = (c, cote) => { const t = cote === 'g' ? c.geo.trouG : c.geo.trouD; return [c.x + t[0], c.y + t[1]]; };
+  const morceaux = [];
+  const morceau = (de, a, trace) => { const p = new Path2D(); trace(p); morceaux.push({ p, de, a }); return p; };
+  const r1 = rangs[0].cubes, prem = r1[0], dern = r1[r1.length - 1];
+  let bout = null; // le ferret : [x, y, ux, uy]
+  if (signe) {
+    const g = trou(prem, 'g'), d = trou(dern, 'd');
+    morceau(null, { c: prem, cote: 'g' }, (p) => { p.moveTo(-20, g[1] + 0.02 * s); p.lineTo(g[0], g[1]); });
+    morceau({ c: prem, cote: 'd' }, { c: dern, cote: 'g' }, (p) => { const a = trou(prem, 'd'), b = trou(dern, 'g'); p.moveTo(a[0], a[1]); p.lineTo(b[0], b[1]); });
+    morceau({ c: dern, cote: 'd' }, null, (p) => { p.moveTo(d[0], d[1]); p.lineTo(532, d[1] + 0.02 * s); });
+  } else {
+    // il arrive du bord gauche, un peu d'en haut, et entre dans le C
+    const g = trou(prem, 'g');
+    morceau(null, { c: prem, cote: 'g' }, (p) => { p.moveTo(-16, g[1] - 0.86 * s); p.bezierCurveTo(g[0] - 0.02 * s, g[1] - 0.84 * s, g[0] - 0.46 * s, g[1] + 0.02 * s, g[0], g[1]); });
+    // CORDO, de gauche à droite
+    for (let i = 1; i < r1.length; i++) {
+      const a = trou(r1[i - 1], 'd'), b = trou(r1[i], 'g');
+      morceau({ c: r1[i - 1], cote: 'd' }, { c: r1[i], cote: 'g' }, (p) => { p.moveTo(a[0], a[1]); p.lineTo(b[0], b[1]); });
+    }
+    // le demi-tour à droite, qui redescend entrer dans le 3 par sa droite
+    const r2 = rangs[1].cubes, trois = r2[r2.length - 1], six = r2[0];
+    const a = trou(dern, 'd'), b = trou(trois, 'd');
+    morceau({ c: dern, cote: 'd' }, { c: trois, cote: 'd' }, (p) => { p.moveTo(a[0], a[1]); p.bezierCurveTo(a[0] + 0.5 * s, a[1] + 0.03 * s, b[0] + 1.2 * s, b[1] - 0.12 * s, b[0], b[1]); });
+    // 63, de droite à gauche
+    const a2 = trou(trois, 'g'), b2 = trou(six, 'd');
+    morceau({ c: trois, cote: 'g' }, { c: six, cote: 'd' }, (p) => { p.moveTo(a2[0], a2[1]); p.lineTo(b2[0], b2[1]); });
+    // il ressort du 6 et pend vers le bas, jusqu'à son ferret
+    const e = trou(six, 'g'), f = [e[0] - 0.9 * s, e[1] + 0.92 * s], c2 = [e[0] - 0.98 * s, e[1] + 0.36 * s];
+    morceau({ c: six, cote: 'g' }, null, (p) => { p.moveTo(e[0], e[1]); p.bezierCurveTo(e[0] - 0.56 * s, e[1] + 0.02 * s, c2[0], c2[1], f[0], f[1]); });
+    const l = Math.hypot(f[0] - c2[0], f[1] - c2[1]);
+    bout = [f[0], f[1], (f[0] - c2[0]) / l, (f[1] - c2[1]) / l];
+  }
+
+  /* le dessin, sur un grand canvas */
+  const G = document.createElement('canvas');
+  G.width = G.height = px * ss;
+  const g = G.getContext('2d');
+  const repere = (x = 0, y = 0) => g.setTransform(uk, 0, 0, uk, ox + uk * x, oy + uk * y);
+  if (!signe) { // le fond crème, à peine plus clair au milieu
+    g.setTransform(ui, 0, 0, ui, 0, 0);
+    const gr = g.createRadialGradient(256, 214, 30, 256, 256, 380);
+    gr.addColorStop(0, '#FFF6EC'); gr.addColorStop(1, '#FCEBD6');
+    g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
+  }
+  const cubes = [];
+  rangs.forEach((r) => r.cubes.forEach((c) => cubes.push(c)));
+  // les ombres : celle du lacet, celles des cubes (douces, un peu vers le bas)
+  const om = Pe.ombreImage(s, uk);
+  repere(0.03 * s, 0.1 * s);
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  morceaux.forEach((m) => {
+    g.strokeStyle = 'rgba(24,14,6,.09)'; g.lineWidth = lc.wl * 2.3; g.stroke(m.p);
+    g.strokeStyle = 'rgba(24,14,6,.16)'; g.lineWidth = lc.wl * 1.15; g.stroke(m.p);
+  });
+  cubes.forEach((c) => { repere(c.x + 0.03 * s, c.y + 0.13 * s); g.globalAlpha = 0.85; g.drawImage(om.cv, -om.c, -om.c, om.t, om.t); g.globalAlpha = 1; });
+  // le lacet, son ferret
+  repere();
+  morceaux.forEach((m) => lacet(g, m.p));
+  if (bout) { // le ferret (comme ceux de l'ouverture, avec la marge de la version masquable)
+    g.setTransform(uk * bout[2], uk * bout[3], -uk * bout[3], uk * bout[2], ox + uk * bout[0], oy + uk * bout[1]);
+    const r = lc.wl * 0.62, gr = g.createLinearGradient(0, -r, 0, r);
+    lc.mat.forEach(([t, c]) => gr.addColorStop(t, c));
+    g.beginPath(); Pe.rrect(g, -0.5, -r, lc.ferret, 2 * r, r * 0.7); g.fillStyle = gr; g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = Math.max(0.5, 0.7 / uk); g.stroke();
+  }
+  // les cubes : la même main que l'ouverture, la lettre plus grande et en petit corps
+  const opts = { taille: signe ? 0.76 : 0.74, largeur: 0.9, corps: 12, dessusAlpha: signe ? 0 : petit ? 0.34 : 0.6, usure: !petit, trait: Math.max(0.7, (ss * 0.9) / uk) };
+  cubes.forEach((c) => {
+    c.img = Pe.dessinerCube(c.geo, Object.assign({}, c, opts), uk, police, rng);
+    repere(c.x, c.y);
+    g.drawImage(c.img.cv, -c.img.cx, -c.img.cy, c.img.w, c.img.h);
+  });
+  // sur la face de côté qu'on voit, le lacet entre dans le trou
+  cubes.forEach((c) => {
+    if (!c.geo.cote) return;
+    const m = morceaux.find((m) => (m.de && m.de.c === c && m.de.cote === c.geo.cote) || (m.a && m.a.c === c && m.a.cote === c.geo.cote));
+    if (!m) return;
+    g.save();
+    repere();
+    g.beginPath();
+    c.geo.face.forEach(([x, y], j) => (j ? g.lineTo(c.x + x, c.y + y) : g.moveTo(c.x + x, c.y + y)));
+    g.closePath(); g.clip();
+    lacet(g, m.p);
+    g.restore();
+  });
+
+  /* on réduit, par moitiés (un lissage propre), jusqu'à la taille voulue */
+  let src = G;
+  while (src.width > px * 2) {
+    const d = document.createElement('canvas');
+    d.width = d.height = src.width / 2;
+    const dg = d.getContext('2d'); dg.imageSmoothingQuality = 'high'; dg.drawImage(src, 0, 0, d.width, d.height);
+    src = d;
+  }
+  cv.width = cv.height = px;
+  const c2 = cv.getContext('2d');
+  c2.imageSmoothingQuality = 'high';
+  c2.drawImage(src, 0, 0, px, px);
+  ic.dataset.pret = '1';
+  document.title = 'Icône Cordo 63 · prête';
+})();
 </script>
 </body>
 </html>

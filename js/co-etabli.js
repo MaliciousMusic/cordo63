@@ -80,7 +80,8 @@
   const easeOut = (t) => 1 - Math.pow(1 - t, 3);
   const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
   const rot = (x, y, a) => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
-  const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 200));
+  const idle = (fn) => R.inactif(fn, 1500);
+  const LEVEE_MAX = 55; // mm : la chute part de là (les ombres soulevées se calculent d'avance jusque-là)
 
   /* ======================================================================
      La vue : du monde (mm, origine au centre de la place libre) aux pixels
@@ -164,13 +165,34 @@
     }
     return images.get(url);
   }
-  /** le décor d'une vue figée : le morceau de l'image de référence qu'elle voit, à sa taille */
-  async function decorFige(V, url) {
+  /** le décor d'une vue figée : le morceau de l'image de référence qu'elle voit, à sa taille (gardé : prechauffer()
+      le prépare à la taille attendue, l'établi l'a alors dès sa première image) */
+  const cleFige = (V, url) => ['fige', url, V.W + 'x' + V.H, V.ppm.toFixed(2)].join('|');
+  async function decorFige(V, url, prio = 3) {
+    const cle = cleFige(V, url), c0 = R.cache.get(cle);
+    if (c0) return c0.canvas;
     const im = await imageFond(url);
+    const c = await R.lancer(recadrer(V, im), { prio, cle });
+    R.cache.set(cle, { canvas: c, px: V.W * V.H });
+    return c;
+  }
+  /* le recadrage, par bandes (une image de 1,5 Mpx réduite en douceur : d'un bloc, une tâche longue sur un petit
+     processeur) ; chaque bande est la même image entière, découpée par un clip aux pixels entiers : à l'identique */
+  function* recadrer(V, im) {
     const k = im.naturalWidth / REF.Vw; // px de l'image par mm
     const c = R.canvas(V.W, V.H), g = c.getContext('2d');
     g.imageSmoothingQuality = 'high';
-    g.drawImage(im, (V.x0 - V.ref.x0) * k, (V.y0 - V.ref.y0) * k, V.Vw * k, V.Vh * k, 0, 0, V.W, V.H);
+    const sx = (V.x0 - V.ref.x0) * k, sy = (V.y0 - V.ref.y0) * k, sw = V.Vw * k, sh = V.Vh * k;
+    const BANDE = 96;
+    for (let y = 0; y < V.H; y += BANDE) {
+      g.save();
+      g.beginPath();
+      g.rect(0, y, V.W, Math.min(BANDE, V.H - y));
+      g.clip();
+      g.drawImage(im, sx, sy, sw, sh, 0, 0, V.W, V.H);
+      g.restore();
+      yield;
+    }
     return c;
   }
 
@@ -267,7 +289,8 @@
     cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block;touch-action:manipulation;';
     cv.setAttribute('role', 'img');
     cv.setAttribute('aria-label', "L'établi de Clément : le tapis de découpe, ses outils et tout ce qui traîne autour");
-    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    // (la position de l'hôte est lue à la mise en page, pas ici : getComputedStyle forcerait tout le style de la
+    // vue qui s'ouvre, en pleine bascule d'onglet)
     host.insertBefore(cv, host.firstChild);
     this.g = cv.getContext('2d');
     this._pointeurs();
@@ -320,10 +343,12 @@
     if (c) return c.canvas;
     const v = await R.coffre.get(cle);
     if (v) {
-      const cv = await R.dePNG(v);
+      const cv = await R.deCoffre(v);
       if (cv) { R.cache.set(cle, { canvas: cv, px: cv.width * cv.height }); return cv; }
     }
     const base = await R.lancer(genBase(V, opts), { prio, cle: cle + '|base' });
+    const brut = base._brut; // (les pixels de la base : rangés tels quels s'il n'y a rien à poser dessus)
+    base._brut = null;
     const enc = opts.disposition === 'vide' || !opts.encombrement ? [] : encombrer(V, opts.graine);
     let tout = base.canvas;
     if (enc.length) {
@@ -331,7 +356,7 @@
       tout = await R.lancer(composer(base.canvas, enc, V), { prio, cle: cle + '|encombrement' });
     }
     R.cache.set(cle, { canvas: tout, px: V.W * V.H });
-    R.versPNG(tout).then((b) => b && R.coffre.put(cle, b));
+    R.versCoffre(tout, tout === base.canvas ? brut : null).then((b) => b && R.coffre.put(cle, b));
     return tout;
   }
 
@@ -344,12 +369,21 @@
     },
 
     async _mettreEnPage() {
+      if (!this.place) {
+        this.place = true;
+        if (getComputedStyle(this.host).position === 'static') this.host.style.position = 'relative';
+      }
       const r = this.host.getBoundingClientRect();
       const larg = Math.max(40, r.width || this.host.clientWidth || 360), haut = Math.max(40, r.height || this.host.clientHeight || 300);
       const gen = ++this.gen;
       const V = (this.V = this.opts.fondFige ? vueFigee(larg, haut) : vue(larg, haut, this.opts.disposition, this.opts.ppm));
       this.cv.width = V.W;
       this.cv.height = V.H;
+      // le décor figé déjà prêt (prechauffer, à la même taille) : il est là dès la première image
+      if (this.opts.fondFige && !this.fond) {
+        const c0 = R.cache.get(cleFige(V, this.opts.fondFige));
+        if (c0) this.fond = c0.canvas;
+      }
       this.dessiner();
       // d'abord l'établi et le tapis ; l'encombrement arrive ensuite, en fondu
       const promesses = [decor(V, this.opts, 3, (base) => {
@@ -395,6 +429,7 @@
     async _sprite(o, prio) {
       const gen = this.gen;
       const sp = await O.preparer(o.id, this._optsSprite(o), prio);
+      await leveesDe(sp, prio); // (ses ombres soulevées : la chute ne calculera rien pendant qu'elle joue)
       if (gen === this.gen && this.objets.get(o.id) === o) o.sp = sp;
       return sp;
     },
@@ -724,7 +759,8 @@
       }
     },
 
-    /* aux temps morts : les objets des services, à la taille de cet écran */
+    /* aux temps morts seulement (rien ne tourne au repos qui gêne une image) : les objets des services, à la taille de
+       cet écran ; celui qu'on touche avant passe devant (poser, prio 3) */
     _prechauffer() {
       if (!this.V) return;
       const V = this.V;
@@ -735,6 +771,17 @@
       }
     },
   };
+
+  /* les ombres soulevées d'un sprite (de 5 en 5 mm jusqu'à LEVEE_MAX), une fois, par tranches, juste avant qu'il
+     tombe (onze petits canvas : cinq fois le sprite en mémoire, on ne les fait que pour ce qui est posé) */
+  const LEVEES = new WeakMap();
+  function leveesDe(sp, prio) {
+    if (!sp || !sp.ombre) return Promise.resolve();
+    let p = LEVEES.get(sp);
+    if (!p) { p = R.lancer(R.leveesG(sp, LEVEE_MAX), { prio }); LEVEES.set(sp, p); }
+    else if (R.presser) R.presser(p, prio);
+    return p;
+  }
 
   /* ======================================================================
      L'API
@@ -768,7 +815,8 @@
     /** calcule le décor d'une vue de largeur × hauteur px CSS, et les objets des services, aux temps morts */
     prechauffer({ largeur = 390, hauteur = 320, disposition = 'services', graine = 63, encombrement = true, fondFige = null } = {}) {
       const V = fondFige ? vueFigee(largeur, hauteur) : vue(largeur, hauteur, disposition);
-      if (fondFige) imageFond(fondFige).catch(() => {});
+      // le décor figé, recadré à la taille attendue (un temps mort) : l'établi l'aura dès sa première image
+      if (fondFige) imageFond(fondFige).then(() => decorFige(V, fondFige, 0)).catch(() => {});
       else decor(V, { disposition, graine, encombrement }, 0).catch(() => {});
       for (const id of [...new Set(Object.values(SERVICES).flat())]) {
         if (O.defs[id]) O.preparer(id, { ppm: V.ppm, angle: BIAIS, graine, oeil: [V.cx - V.libre.x, V.cy - V.libre.y] }, 0).catch(() => {});

@@ -23,8 +23,10 @@
         (plusieurs cases : la main gauche revient avec le clou suivant, tout va plus vite, cinq clous en moins de 9 s ;
         chaque tête est posée dans sa case au dernier coup ; mouvement réduit, ou mains pas prêtes en 4,5 s :
         pas de mains, la tête se pose d'un coup de tampon)
-   CO.Clouage.preparer() → Promise   calcule les mains, les avant-bras et le maillet d'avance (≈ 2 à 4 s la première
-        fois sur un ordinateur, puis gardés dans le téléphone) : à appeler tôt (la vue « Mes tickets », le code qui s'ouvre)
+   CO.Clouage.preparer({ fond, doux }) → Promise   calcule les mains, les avant-bras et le maillet d'avance (≈ 2 à 4 s
+        la première fois sur un ordinateur, puis gardés dans le téléphone) : à appeler tôt. fond : aux temps morts
+        seulement (dès que l'appli est prête) ; doux : une tranche après chaque image (la vue « Mes tickets ») ; sans :
+        tout de suite (le code qui s'ouvre) ; rappelé plus pressé, ce qui reste passe devant
    CO.Clouage.stats.dernier          le dernier clouage : durée, images, coût JS (banc d'essai)
    CO.Clouage.figer(cases, o, t)     dessine l'instant t sans l'animer (captures) ; CO.Clouage.plan(n, coups, graine)
    ========================================================================== */
@@ -247,21 +249,32 @@
     };
   }
 
-  /** calcule d'avance les mains et le maillet (une fois ; gardés en mémoire et dans le téléphone) */
-  function preparer() {
-    if (pret) return pret;
+  /** calcule d'avance les mains et le maillet (une fois ; gardés en mémoire et dans le téléphone). fond : aux temps
+      morts seulement ; doux : une tranche après chaque image (on est sur Mes tickets) ; rien : tout de suite (le code
+      est en train d'être tapé). Rappelé plus pressé, ce qui reste à faire passe devant. */
+  let travaux = null, allure = 2;
+  // les priorités, selon l'allure (0 : temps morts, ≤ 0 ; 1 : en douceur, entre 0 et 1 ; 2 : tout de suite), dans le même ordre
+  const prioDe = (p, a) => (a === 0 ? p - 10 : a === 1 ? 0.5 + p / 10 : p);
+  function preparer(o = {}) {
+    const a = o && o.fond ? 0 : o && o.doux ? 1 : 2;
+    if (pret) {
+      if (a > allure && travaux) { allure = a; travaux.forEach(([p, prio]) => M().calcul.presser(p, prioDe(prio, a))); }
+      return pret;
+    }
     const Mn = M(), Rr = R();
     if (!Mn || !Rr) return (pret = Promise.resolve(null));
+    allure = a;
+    const pr = (p) => prioDe(p, a);
     // (les calculs tournent même si le film de l'atelier, ailleurs, dort)
     if (!arret) arret = Mn.calcul.condition(() => calculer);
-    const main = (cote, pose, angle, prio = 3) => Mn.preparer('main', cote, pose, { ppm: PPM, angle }, prio);
-    const bras = (cote, angle) => Mn.preparer('bras', cote, null, { ppm: PPM, angle, longueur: AVANT_BRAS }, 3.2);
+    const main = (cote, pose, angle, prio = 3) => Mn.preparer('main', cote, pose, { ppm: PPM, angle }, pr(prio));
+    const bras = (cote, angle) => Mn.preparer('bras', cote, null, { ppm: PPM, angle, longueur: AVANT_BRAS }, pr(3.2));
     const maillet = (() => {
       const k = 'clouage-2|maillet|' + PPM;
       const c = Rr.cache.get(k);
       if (c) return Promise.resolve(c);
       const sansCoffre = !Mn.coffre || /[?&]nocache\b/.test(location.search);
-      return Mn.calcul.lancer((function* () {
+      const pl = Mn.calcul.lancer((function* () {
         if (!sansCoffre) {
           const box = { v: null };
           yield Mn.coffre.sortir('cl|' + k).then((x) => { box.v = x; });
@@ -273,18 +286,21 @@
         const sp = yield* Rr.rendre(spec);
         if (!sansCoffre) Mn.coffre.ranger('cl|' + k, sp);
         return sp;
-      })(), 3, 'maillet').then((sp) => Rr.cache.set(k, sp));
+      })(), pr(3), 'maillet');
+      const p = pl.then((sp) => Rr.cache.set(k, sp));
+      p.job = pl.job;
+      return p;
     })();
     // l'essentiel d'abord (la main qui tient le clou, le poing et le maillet, les avant-bras) ; la main gauche
     // détendue (une fois le clou lâché) suit : tant qu'elle n'est pas prête, la main garde la pince
     const detendue = main(-1, 'lache', ANGLES.g, 2.5);
-    pret = Promise.all([
-      main(-1, 'clou', ANGLES.g), main(1, 'maillet', ANGLES.d), maillet, bras(-1, ANGLES.g), bras(1, ANGLES.d),
-    ]).then(([gP, dP, ml, gB, dB]) => {
+    const essentiel = [main(-1, 'clou', ANGLES.g), main(1, 'maillet', ANGLES.d), maillet, bras(-1, ANGLES.g), bras(1, ANGLES.d)];
+    travaux = [[essentiel[0], 3], [essentiel[1], 3], [maillet, 3], [essentiel[3], 3.2], [essentiel[4], 3.2], [detendue, 2.5]];
+    pret = Promise.all(essentiel).then(([gP, dP, ml, gB, dB]) => {
       SP = { gP, gR: null, dP, ml, gB, dB };
       return SP;
     }).catch((e) => { console.warn('clouage', e); pret = null; return null; });
-    pretTout = Promise.all([pret, detendue]).then(([sp, gR]) => { if (sp) sp.gR = gR; }, () => {}).then(() => { if (arret) { arret(); arret = null; } });
+    pretTout = Promise.all([pret, detendue]).then(([sp, gR]) => { if (sp) sp.gR = gR; }, () => {}).then(() => { travaux = null; if (arret) { arret(); arret = null; } });
     return pret;
   }
 
